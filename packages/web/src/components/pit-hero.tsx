@@ -11,43 +11,50 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
   const value = current ?? target;
   const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
   const targetPct = Math.max(0, Math.min(1, (target - min) / (max - min)));
-  const start = 140;
-  const sweep = 260;
+  const startDeg = 140;
+  const sweepDeg = 260;
   const r = 86;
   const cx = 110;
   const cy = 110;
+  const circumference = 2 * Math.PI * r;
+  const trackLen = (sweepDeg / 360) * circumference;
+  const progressLen = pct * trackLen;
   const polar = (t: number) => {
-    const a = ((start + sweep * t) * Math.PI) / 180;
+    const a = ((startDeg + sweepDeg * t) * Math.PI) / 180;
     return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
   };
-  const a = polar(0);
-  const b = polar(pct);
-  const large = pct > 0.5 ? 1 : 0;
   const tick = polar(targetPct);
 
   return (
-    <svg viewBox="0 0 220 170" className="h-44 w-full">
-      <path
-        d={`M ${polar(0).x} ${polar(0).y} A ${r} ${r} 0 1 1 ${polar(1).x} ${polar(1).y}`}
-        fill="none"
-        stroke="rgba(255,214,170,0.12)"
-        strokeWidth="14"
-        strokeLinecap="round"
-      />
-      <path
-        d={`M ${a.x} ${a.y} A ${r} ${r} 0 ${large} 1 ${b.x} ${b.y}`}
-        fill="none"
-        stroke="url(#ember)"
-        strokeWidth="14"
-        strokeLinecap="round"
-      />
-      <circle cx={tick.x} cy={tick.y} r="5" fill="#f5a524" />
+    <svg viewBox="0 0 220 176" className="mx-auto h-44 w-full" preserveAspectRatio="xMidYMid meet">
       <defs>
-        <linearGradient id="ember" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id="pit-gauge-ember" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#f5a524" />
           <stop offset="100%" stopColor="#ff6a2a" />
         </linearGradient>
       </defs>
+      <g
+        fill="none"
+        strokeWidth="14"
+        strokeLinecap="round"
+        transform={`rotate(${startDeg} ${cx} ${cy})`}
+      >
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          stroke="rgba(255,214,170,0.12)"
+          strokeDasharray={`${trackLen} ${circumference}`}
+        />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          stroke="url(#pit-gauge-ember)"
+          strokeDasharray={`${progressLen} ${circumference}`}
+        />
+      </g>
+      <circle cx={tick.x} cy={tick.y} r="5" fill="#f5a524" />
     </svg>
   );
 }
