@@ -11,6 +11,9 @@ export async function proxyToWeb(c: Context): Promise<Response> {
   const headers = new Headers(c.req.raw.headers);
   headers.set("host", target.host);
   headers.delete("content-length");
+  // Node fetch auto-decompresses; don't ask upstream for compressed bodies
+  // or we'll wrongly forward Content-Encoding to the client (Safari -1015).
+  headers.delete("accept-encoding");
 
   const method = c.req.method;
   const init: RequestInit & { duplex?: "half" } = {
@@ -27,6 +30,9 @@ export async function proxyToWeb(c: Context): Promise<Response> {
   try {
     const upstream = await fetch(target, init);
     const responseHeaders = new Headers(upstream.headers);
+    responseHeaders.delete("content-encoding");
+    responseHeaders.delete("content-length");
+    responseHeaders.delete("transfer-encoding");
     return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
