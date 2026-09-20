@@ -142,7 +142,7 @@ function EditableSetpoint({ current, locked }: { current: number; locked: boolea
       {editing ? (
         <Popover
           open={open}
-          onOpenChange={(next) => {
+          onOpenChange={(next: boolean) => {
             setOpen(next);
             if (!next) applyDraft();
           }}
@@ -187,7 +187,7 @@ function EditableSetpoint({ current, locked }: { current: number; locked: boolea
             align="end"
             className="w-32 p-1"
             onOpenAutoFocus={(e: Event) => e.preventDefault()}
-            onPointerDownOutside={(e) => {
+            onPointerDownOutside={(e: { target: EventTarget | null; preventDefault: () => void }) => {
               if (rootRef.current?.contains(e.target as Node)) e.preventDefault();
             }}
           >
