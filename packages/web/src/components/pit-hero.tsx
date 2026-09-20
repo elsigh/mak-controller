@@ -81,7 +81,15 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
   );
 }
 
-function EditableSetpoint({ current, locked }: { current: number; locked: boolean }) {
+function EditableSetpoint({
+  current,
+  locked,
+  onApplied,
+}: {
+  current: number;
+  locked: boolean;
+  onApplied: (temp: number) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(String(current));
@@ -119,6 +127,7 @@ function EditableSetpoint({ current, locked }: { current: number; locked: boolea
     activeRef.current = false;
     const next = clampSetpoint(temp);
     setDraft(String(next));
+    onApplied(next);
     if (next !== current) void commitSetpoint(next);
     setOpen(false);
     setEditing(false);
@@ -207,7 +216,11 @@ function EditableSetpoint({ current, locked }: { current: number; locked: boolea
                   "flex w-full items-center rounded-md px-2 py-1.5 font-mono text-sm tabular-nums outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
                   temp === current && "bg-accent text-accent-foreground",
                 )}
-                onClick={() => apply(temp)}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  apply(temp);
+                }}
               >
                 {temp}°
               </button>
@@ -233,7 +246,14 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
   const ready = status !== null;
   const online = status?.is_online ?? false;
   const pit = online ? Number(status?.state.temp) : null;
-  const target = status?.command.setPoint ?? 175;
+  const reported = status?.command.setPoint ?? 175;
+  const [pendingSetpoint, setPendingSetpoint] = useState<number | null>(null);
+  const target = pendingSetpoint ?? reported;
+
+  useEffect(() => {
+    if (pendingSetpoint !== null && reported === pendingSetpoint) setPendingSetpoint(null);
+  }, [pendingSetpoint, reported]);
+
   const delta = pit !== null && Number.isFinite(pit) ? pit - target : null;
   const pitLabel = pit !== null && Number.isFinite(pit) ? Math.round(pit) : "--";
   const locked = !online || Boolean(status?.is_cooldown) || status?.state.power.toUpperCase() !== "ON";
@@ -255,25 +275,23 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
             )}
           </div>
           <div className="text-right">
-            <div className={cn("flex items-center justify-end gap-2", showTurnOn && "min-h-11")}>
-              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Setpoint</p>
-              {showTurnOn ? (
-                <form action={setPowerAction}>
-                  <input type="hidden" name="state" value={1} />
-                  <Button type="submit" disabled={!online} className={touchBtnClass}>
-                    Turn on
-                  </Button>
-                </form>
-              ) : null}
-            </div>
+            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Setpoint</p>
             {ready ? (
-              <EditableSetpoint current={target} locked={locked} />
+              <EditableSetpoint current={target} locked={locked} onApplied={setPendingSetpoint} />
             ) : (
               <Skeleton className="mt-2 ml-auto h-12 w-20" />
             )}
             <p className="mt-1 h-5 text-sm text-muted-foreground">
               {delta === null ? "Awaiting grill" : `${delta > 0 ? "+" : ""}${Math.round(delta)}° vs target`}
             </p>
+            {showTurnOn ? (
+              <form action={setPowerAction} className="mt-2 flex min-h-11 justify-end">
+                <input type="hidden" name="state" value={1} />
+                <Button type="submit" disabled={!online} className={touchBtnClass}>
+                  Turn on
+                </Button>
+              </form>
+            ) : null}
           </div>
         </div>
       </CardHeader>
