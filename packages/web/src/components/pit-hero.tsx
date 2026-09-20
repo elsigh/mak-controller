@@ -88,6 +88,8 @@ function EditableSetpoint({ current, locked }: { current: number; locked: boolea
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   useEffect(() => {
     if (!editing) setDraft(String(current));
@@ -97,7 +99,20 @@ function EditableSetpoint({ current, locked }: { current: number; locked: boolea
     if (!editing) return;
     inputRef.current?.focus();
     inputRef.current?.select();
+    setOpen(true);
   }, [editing]);
+
+  useEffect(() => {
+    if (!editing) return;
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Node | null;
+      if (rootRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest("[data-slot='popover-content']")) return;
+      applyDraft();
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [editing, current]);
 
   function apply(temp: number) {
     if (!activeRef.current) return;
@@ -111,7 +126,7 @@ function EditableSetpoint({ current, locked }: { current: number; locked: boolea
 
   function applyDraft() {
     if (!activeRef.current) return;
-    const parsed = Number(draft);
+    const parsed = Number(draftRef.current);
     if (!Number.isFinite(parsed)) {
       activeRef.current = false;
       setDraft(String(current));
@@ -134,19 +149,12 @@ function EditableSetpoint({ current, locked }: { current: number; locked: boolea
     activeRef.current = true;
     setDraft(String(current));
     setEditing(true);
-    setOpen(true);
   }
 
   return (
     <div ref={rootRef} className="mt-2 flex h-12 min-h-12 items-center justify-end">
       {editing ? (
-        <Popover
-          open={open}
-          onOpenChange={(next: boolean) => {
-            setOpen(next);
-            if (!next) applyDraft();
-          }}
-        >
+        <Popover open={open} onOpenChange={setOpen}>
           <PopoverAnchor asChild>
             <div className="flex w-fit items-center">
               <Input
