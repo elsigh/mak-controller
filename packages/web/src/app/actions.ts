@@ -42,3 +42,13 @@ export async function stopSessionAction() {
 export async function saveSettingsAction(formData: FormData) {
   await post("/internal/settings", { ntfy_topic: String(formData.get("ntfy_topic") ?? "") });
 }
+
+export async function startSavedRecipeAction(formData: FormData) {
+  const id = Number(formData.get("id"));
+  const res = await bridgeFetch("/internal/recipes");
+  if (!res.ok) throw new Error("Could not load recipes");
+  const recipes = (await res.json()) as Array<{ id: number; name: string; stages: unknown[] }>;
+  const recipe = recipes.find((item) => item.id === id);
+  if (!recipe) return;
+  await post("/internal/automation/start", { name: recipe.name, stages: recipe.stages });
+}

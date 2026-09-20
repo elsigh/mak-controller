@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { formatStageRule, type Recipe, type RecipeStage, type StatusResponse, type TriggerType } from "@makgrill/shared";
+import { startSavedRecipeAction } from "@/app/actions";
 import { useStatus } from "@/hooks/use-status";
 import { api } from "@/lib/api";
 import { RecipeRunner } from "./recipe-runner";
@@ -17,35 +19,26 @@ const emptyStage = (index: number): RecipeStage => ({
 export function RecipeStudio({
   initialRecipes = [],
   initialStatus = null,
+  selectedId = "",
+  initialName = "",
+  initialStages = [],
 }: {
   initialRecipes?: Recipe[];
   initialStatus?: StatusResponse | null;
+  selectedId?: string;
+  initialName?: string;
+  initialStages?: RecipeStage[];
 }) {
+  const router = useRouter();
   const { status, refresh } = useStatus(2500, initialStatus);
   const [recipes, setRecipes] = useState<Recipe[]>(initialRecipes);
-  const [selected, setSelected] = useState<number | "new" | "">("");
-  const [name, setName] = useState("");
-  const [stages, setStages] = useState<RecipeStage[]>([]);
+  const selected = selectedId === "new" ? "new" : selectedId ? Number(selectedId) : "";
+  const [name, setName] = useState(initialName);
+  const [stages, setStages] = useState<RecipeStage[]>(initialStages);
   const [message, setMessage] = useState("");
 
   async function load() {
-    const list = await api.recipes();
-    setRecipes(list);
-  }
-
-  function pick(value: string) {
-    if (value === "new") {
-      setSelected("new");
-      setName("");
-      setStages([emptyStage(0)]);
-      return;
-    }
-    const id = Number(value);
-    const recipe = recipes.find((item) => item.id === id);
-    if (!recipe) return;
-    setSelected(id);
-    setName(recipe.name);
-    setStages(recipe.stages);
+    setRecipes(await api.recipes());
   }
 
   function updateStage(index: number, patch: Partial<RecipeStage>) {
@@ -59,18 +52,17 @@ export function RecipeStudio({
       name,
       stages,
     });
-    setSelected(result.id);
     setMessage("Recipe saved");
     await load();
+    router.push(`/recipes?id=${result.id}`);
+    router.refresh();
   }
 
   async function remove() {
     if (typeof selected !== "number") return;
     await api.deleteRecipe(selected);
-    setSelected("");
-    setName("");
-    setStages([]);
-    await load();
+    router.push("/recipes");
+    router.refresh();
   }
 
   return (
@@ -83,22 +75,27 @@ export function RecipeStudio({
       </div>
       <RecipeRunner status={status} onChange={refresh} />
       <section className="panel rounded-3xl p-5">
-        <label className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
-          Saved recipes
-          <select
-            value={selected}
-            onChange={(e) => pick(e.target.value)}
-            className="mt-2 w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3"
-          >
-            <option value="">Select a recipe</option>
-            <option value="new">+ Create new recipe</option>
-            {recipes.map((recipe) => (
-              <option key={recipe.id} value={recipe.id}>
-                {recipe.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <form method="get" action="/recipes" className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <label className="flex-1 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+            Saved recipes
+            <select
+              name="id"
+              defaultValue={selectedId}
+              className="mt-2 w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3 normal-case tracking-normal text-base text-[var(--ink)]"
+            >
+              <option value="">Select a recipe</option>
+              <option value="new">+ Create new recipe</option>
+              {recipes.map((recipe) => (
+                <option key={recipe.id} value={recipe.id}>
+                  {recipe.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" className="rounded-2xl bg-amber-400 px-5 py-3 font-semibold text-black">
+            Load
+          </button>
+        </form>
         {stages.length > 0 && (
           <div className="mt-5 space-y-4">
             <input
@@ -202,13 +199,14 @@ export function RecipeStudio({
               >
                 Delete
               </button>
-              <button
-                type="button"
-                onClick={() => void api.startAutomation(name || "Custom recipe", stages).then(refresh)}
-                className="rounded-2xl bg-amber-400 px-4 py-2 font-semibold text-black"
-              >
-                Start automated recipe
-              </button>
+              {typeof selected === "number" && (
+                <form action={startSavedRecipeAction}>
+                  <input type="hidden" name="id" value={selected} />
+                  <button type="submit" className="rounded-2xl bg-amber-400 px-4 py-2 font-semibold text-black">
+                    Start automated recipe
+                  </button>
+                </form>
+              )}
             </div>
             {message && <p className="text-sm text-emerald-300">{message}</p>}
           </div>
