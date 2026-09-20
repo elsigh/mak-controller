@@ -3,19 +3,27 @@ import {
   DEFAULT_STATE,
   FLAMEOUT_DELTA_F,
   FLAMEOUT_DURATION_MS,
+  SILENCE_RENOTIFY_MS,
+  SILENCE_WATCHDOG_INTERVAL_MS,
   analyzeBitmaskDiff,
   clampSetpoint,
   computeCooldown,
   computeOnline,
+  containsDangerToken,
   encodeGrillResponse,
+  isSustainedSilence,
   parseNumber,
   shouldAdoptPitSetpoint,
+  shouldHoldPowerOffAfterGap,
   shouldResetCommandedPower,
+  shouldWatchSilence,
+  unknownGrillPostKeys,
 } from "@makgrill/shared";
 import type {
   AutomationStatus,
   GrillCommand,
   GrillState,
+  PowerFailSafeReason,
   ProbeKey,
   RecipeStage,
   StatusResponse,
@@ -41,15 +49,28 @@ interface AutomationState {
   stages: RecipeStage[];
 }
 
+export interface GrillRuntimeOptions {
+  notify?: (title: string, message: string, priority?: string) => void;
+}
+
 export class GrillRuntime {
   private command: GrillCommand = { ...DEFAULT_COMMAND };
   private state: GrillState = { ...DEFAULT_STATE };
   private lastSeenEpoch = 0;
   /** True after setSetpoint until the command is delivered on a grill poll. */
   private pendingExplicitSetpoint = false;
+  /** True after an explicit UI/API power-on until the next grill poll delivers it. */
+  private pendingExplicitPowerOn = false;
   private prevFlags: string | null = null;
   private flameoutStartEpoch: number | null = null;
   private flameoutTriggered = false;
+  private loggedOnline = false;
+  private silenceNotifiedAt = 0;
+  private powerFailSafe: PowerFailSafeReason | null = null;
+  private dangerAlerted = false;
+  private seenUnknownKeys = new Set<string>();
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly notifyOverride?: GrillRuntimeOptions["notify"];
   private atSetAlerted = false;
   private lastAlertedSetpoint: number | null = null;
   private probeTargets: Record<ProbeKey, number | null> = {
@@ -71,8 +92,9 @@ export class GrillRuntime {
   };
   private ntfyTopic = "";
 
-  constructor(ntfyTopic = "") {
+  constructor(ntfyTopic = "", options: GrillRuntimeOptions = {}) {
     this.ntfyTopic = ntfyTopic;
+    this.notifyOverride = options.notify;
   }
 
   setNtfyTopic(topic: string) {
@@ -84,7 +106,91 @@ export class GrillRuntime {
   }
 
   private notify(title: string, message: string, priority = "default") {
+    if (this.notifyOverride) {
+      this.notifyOverride(title, message, priority);
+      return;
+    }
     void sendNtfy(this.ntfyTopic, title, message, priority);
+  }
+
+  startWatchdog(intervalMs = SILENCE_WATCHDOG_INTERVAL_MS) {
+    this.stopWatchdog();
+    const timer = setInterval(() => this.tickWatchdog(), intervalMs);
+    timer.unref?.();
+    this.watchdogTimer = timer;
+  }
+
+  stopWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
+  /**
+   * Independent of handleGrillPost. Silence is invisible if we only look
+   * inside the POST handler — this is what the 2026-09-20 blackout needed.
+   */
+  tickWatchdog(now = Date.now()) {
+    const online = computeOnline(this.lastSeenEpoch, now);
+    if (this.loggedOnline && !online && this.lastSeenEpoch > 0) {
+      const silentFor = now - this.lastSeenEpoch;
+      log(
+        "WARN",
+        `Grill went offline at ${this.nowStamp(new Date(now))} (last POST ${silentFor}ms ago, last Power=${this.state.power}).`,
+      );
+      this.loggedOnline = false;
+    }
+
+    if (!isSustainedSilence(this.lastSeenEpoch, now)) return;
+
+    let sessionActive = false;
+    try {
+      sessionActive = Boolean(getActiveSession());
+    } catch {
+      sessionActive = false;
+    }
+
+    if (
+      !shouldWatchSilence({
+        lastSeenEpoch: this.lastSeenEpoch,
+        lastReportedPower: this.state.power,
+        sessionActive,
+      })
+    ) {
+      return;
+    }
+
+    const silentFor = now - this.lastSeenEpoch;
+    this.forcePowerOff(
+      "silence",
+      `Silence fail-safe: no grill POST for ${silentFor}ms while last Power=${this.state.power}; commanding power=0 so the next poll requests cooldown.`,
+    );
+
+    if (this.silenceNotifiedAt === 0 || now - this.silenceNotifiedAt >= SILENCE_RENOTIFY_MS) {
+      this.silenceNotifiedAt = now;
+      this.notify(
+        "MakGrill: grill silent / Web Ctrl lost",
+        `No POST for ${Math.round(silentFor / 1000)}s. Last Power=${this.state.power}. Commanded power set to 0.`,
+        "urgent",
+      );
+    }
+  }
+
+  private forcePowerOff(reason: PowerFailSafeReason, message: string) {
+    const alreadyHeld = this.command.power === 0 && this.powerFailSafe === reason;
+    this.command.power = 0;
+    this.powerFailSafe = reason;
+    if (!alreadyHeld) {
+      log("WARN", message);
+    }
+  }
+
+  private logUnknownFormKeys(form: Record<string, string>) {
+    for (const key of unknownGrillPostKeys(form, this.seenUnknownKeys)) {
+      this.seenUnknownKeys.add(key);
+      log("INFO", `Unknown grill POST key '${key}' (logged once): ${form[key]}`);
+    }
   }
 
   private nowStamp(now = new Date()) {
@@ -93,8 +199,10 @@ export class GrillRuntime {
   }
 
   handleGrillPost(form: Record<string, string>, now = Date.now()): string {
+    this.logUnknownFormKeys(form);
     const clock = new Date(now);
-    const wasOnline = computeOnline(this.lastSeenEpoch, now);
+    const previousSeen = this.lastSeenEpoch;
+    const wasOnline = computeOnline(previousSeen, now);
 
     this.state = {
       grill_id: form.GrillId || "Unknown",
@@ -110,6 +218,7 @@ export class GrillRuntime {
     const pitTemp = parseNumber(this.state.temp);
     this.maybeAdoptSetpointOnReconnect(wasOnline, pitTemp);
     this.lastSeenEpoch = now;
+    this.notePollResumed(wasOnline, previousSeen, now);
 
     const timestamp = this.nowStamp(clock);
     const session = getActiveSession();
@@ -144,14 +253,51 @@ export class GrillRuntime {
     this.evaluateAutomation(now);
     this.evaluateProbeAlarms();
     this.evaluateAtSet(pitTemp, setpoint);
+    this.evaluateDangerFlags();
     this.evaluateFlameout(now, pitTemp, setpoint);
+    this.applyPowerReconnectPolicy(previousSeen, now);
 
-    if (shouldResetCommandedPower(this.command.power, this.state.power)) {
+    return encodeGrillResponse(this.command);
+  }
+
+  private notePollResumed(wasOnline: boolean, previousSeen: number, now: number) {
+    if (!wasOnline) {
+      const origin =
+        previousSeen === 0 ? "first poll" : `offline for ${now - previousSeen}ms`;
+      log(
+        "INFO",
+        `Grill back online at ${this.nowStamp(new Date(now))} (${origin}; Power=${this.state.power}).`,
+      );
+    }
+    this.loggedOnline = true;
+    this.silenceNotifiedAt = 0;
+  }
+
+  private applyPowerReconnectPolicy(previousSeen: number, now: number) {
+    const offlineGapMs = previousSeen === 0 ? Number.POSITIVE_INFINITY : now - previousSeen;
+    const holdAfterGap = shouldHoldPowerOffAfterGap({
+      offlineGapMs,
+      reportedPower: this.state.power,
+      pendingExplicitPowerOn: this.pendingExplicitPowerOn,
+    });
+
+    if (this.pendingExplicitPowerOn) {
+      this.pendingExplicitPowerOn = false;
+      return;
+    }
+
+    if (holdAfterGap) {
+      this.forcePowerOff(
+        "offline-off",
+        `Long offline gap (${offlineGapMs === Number.POSITIVE_INFINITY ? "never seen" : `${offlineGapMs}ms`}) and grill reports OFF; holding commanded power at 0 until explicit UI/API power-on.`,
+      );
+      return;
+    }
+
+    if (shouldResetCommandedPower(this.command.power, this.state.power, this.powerFailSafe !== null)) {
       log("INFO", `Cooldown acknowledged by grill (${this.state.power}). Resetting power command to 1.`);
       this.command.power = 1;
     }
-
-    return encodeGrillResponse(this.command);
   }
 
   private maybeAdoptSetpointOnReconnect(wasOnline: boolean, pitTemp: number | null) {
@@ -300,10 +446,13 @@ export class GrillRuntime {
           this.flameoutStartEpoch = now;
         } else if (now - this.flameoutStartEpoch >= FLAMEOUT_DURATION_MS && !this.flameoutTriggered) {
           this.flameoutTriggered = true;
-          log("WARN", `[ALARM] Flameout detected! Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F)`);
+          this.forcePowerOff(
+            "flameout",
+            `[ALARM] Flameout detected! Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F). Commanding power=0.`,
+          );
           this.notify(
             "MakGrill Flameout Warning!",
-            `Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F)`,
+            `Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F). Commanded power set to 0.`,
             "urgent",
           );
         }
@@ -317,6 +466,25 @@ export class GrillRuntime {
     }
   }
 
+  private evaluateDangerFlags() {
+    const haystack = `${this.state.flags} ${this.state.power}`;
+    if (!containsDangerToken(haystack)) {
+      this.dangerAlerted = false;
+      return;
+    }
+    if (this.dangerAlerted) return;
+    this.dangerAlerted = true;
+    this.forcePowerOff(
+      "danger",
+      `[ALARM] Danger token in GrillFlags/Power ('${this.state.flags}' / '${this.state.power}'). Commanding power=0.`,
+    );
+    this.notify(
+      "MakGrill: danger flag",
+      `GrillFlags='${this.state.flags}' Power='${this.state.power}'. Commanded power set to 0.`,
+      "urgent",
+    );
+  }
+
   setSetpoint(temp: number): GrillCommand {
     this.command.setPoint = clampSetpoint(temp);
     this.pendingExplicitSetpoint = true;
@@ -324,11 +492,19 @@ export class GrillRuntime {
   }
 
   setPower(state: 0 | 1): { ok: boolean; error?: string; power: number } {
+    if (state === 1 && this.powerFailSafe) {
+      log("INFO", `Clearing power fail-safe (${this.powerFailSafe}) after explicit UI/API power-on.`);
+      this.powerFailSafe = null;
+      this.pendingExplicitPowerOn = true;
+      this.command.power = 1;
+      return { ok: true, power: 1 };
+    }
     const status = this.getStatus();
     if (status.is_cooldown && state === 1) {
       return { ok: false, error: "Grill is cooling down", power: this.command.power };
     }
     this.command.power = state;
+    this.pendingExplicitPowerOn = state === 1;
     return { ok: true, power: state };
   }
 
@@ -404,6 +580,8 @@ export class GrillRuntime {
       probe_targets: { ...this.probeTargets },
       probe_alerts: { ...this.probeAlerted },
       flameout_alert: this.flameoutTriggered,
+      power_failsafe: this.powerFailSafe !== null,
+      power_failsafe_reason: this.powerFailSafe,
       at_set: this.state.flags.toUpperCase().includes("ATSET"),
       automation,
     };

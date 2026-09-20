@@ -253,8 +253,11 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
 
   const delta = pit !== null && Number.isFinite(pit) ? pit - target : null;
   const pitLabel = pit !== null && Number.isFinite(pit) ? Math.round(pit) : "--";
+  const failSafe = Boolean(status?.power_failsafe);
   const locked = !online || Boolean(status?.is_cooldown) || status?.state.power.toUpperCase() !== "ON";
-  const showTurnOn = ready && status.state.power.toUpperCase() !== "ON" && !status.is_cooldown;
+  const showTurnOn =
+    ready &&
+    (failSafe || (status.state.power.toUpperCase() !== "ON" && !status.is_cooldown));
 
   return (
     <Panel className="ember-ring min-h-[22.5rem]">
@@ -284,7 +287,7 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
             {showTurnOn ? (
               <form action={setPowerAction} className="mt-2 flex min-h-11 justify-end">
                 <input type="hidden" name="state" value={1} />
-                <Button type="submit" disabled={!online} className={touchBtnClass}>
+                <Button type="submit" disabled={!online && !failSafe} className={touchBtnClass}>
                   Turn on
                 </Button>
               </form>

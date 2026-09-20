@@ -4,11 +4,17 @@ import {
   clampSetpoint,
   computeCooldown,
   computeOnline,
+  containsDangerToken,
   encodeGrillResponse,
+  isSustainedSilence,
   isValidSetpoint,
   shouldAdoptPitSetpoint,
+  shouldHoldPowerOffAfterGap,
   shouldResetCommandedPower,
+  shouldWatchSilence,
+  unknownGrillPostKeys,
   DEFAULT_COMMAND,
+  SILENCE_THRESHOLD_MS,
 } from "./index.ts";
 
 describe("setpoint", () => {
@@ -105,5 +111,89 @@ describe("online and cooldown heuristics", () => {
     assert.equal(shouldResetCommandedPower(0, "OFF"), true);
     assert.equal(shouldResetCommandedPower(0, "ON"), false);
     assert.equal(shouldResetCommandedPower(1, "OFF"), false);
+    assert.equal(shouldResetCommandedPower(0, "OFF", true), false);
+  });
+});
+
+describe("silence and danger fail-safes", () => {
+  it("watches silence for ON/COOL or an active session, not a cold OFF grill", () => {
+    assert.equal(
+      shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "ON", sessionActive: false }),
+      true,
+    );
+    assert.equal(
+      shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "COOL", sessionActive: false }),
+      true,
+    );
+    assert.equal(
+      shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "OFF", sessionActive: true }),
+      true,
+    );
+    assert.equal(
+      shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "OFF", sessionActive: false }),
+      false,
+    );
+    assert.equal(
+      shouldWatchSilence({ lastSeenEpoch: 0, lastReportedPower: "ON", sessionActive: true }),
+      false,
+    );
+  });
+
+  it("treats 30s without a POST as sustained silence", () => {
+    const last = 1_000_000;
+    assert.equal(isSustainedSilence(last, last + SILENCE_THRESHOLD_MS - 1), false);
+    assert.equal(isSustainedSilence(last, last + SILENCE_THRESHOLD_MS), true);
+    assert.equal(isSustainedSilence(0, last + SILENCE_THRESHOLD_MS), false);
+  });
+
+  it("holds power off after a long gap when the grill reports OFF", () => {
+    assert.equal(
+      shouldHoldPowerOffAfterGap({
+        offlineGapMs: SILENCE_THRESHOLD_MS,
+        reportedPower: "OFF",
+        pendingExplicitPowerOn: false,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldHoldPowerOffAfterGap({
+        offlineGapMs: SILENCE_THRESHOLD_MS - 1,
+        reportedPower: "OFF",
+        pendingExplicitPowerOn: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldHoldPowerOffAfterGap({
+        offlineGapMs: SILENCE_THRESHOLD_MS,
+        reportedPower: "ON",
+        pendingExplicitPowerOn: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldHoldPowerOffAfterGap({
+        offlineGapMs: SILENCE_THRESHOLD_MS,
+        reportedPower: "OFF",
+        pendingExplicitPowerOn: true,
+      }),
+      false,
+    );
+  });
+
+  it("detects danger tokens in flags or power, case-insensitive", () => {
+    assert.equal(containsDangerToken("FIRE"), true);
+    assert.equal(containsDangerToken("flameout"), true);
+    assert.equal(containsDangerToken("FLAME OUT"), true);
+    assert.equal(containsDangerToken("timeout"), true);
+    assert.equal(containsDangerToken("TIME OUT"), true);
+    assert.equal(containsDangerToken("ATSET"), false);
+    assert.equal(containsDangerToken("ON"), false);
+    assert.equal(containsDangerToken("0"), false);
+  });
+
+  it("returns unknown POST keys once", () => {
+    assert.deepEqual(unknownGrillPostKeys({ GrillId: "1", Temp: "200", RSSI: "-40" }), ["RSSI"]);
+    assert.deepEqual(unknownGrillPostKeys({ GrillId: "1", RSSI: "-40" }, ["RSSI"]), []);
   });
 });

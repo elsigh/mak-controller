@@ -53,6 +53,8 @@ export interface AutomationStatus {
   current_stage: RecipeStage | null;
 }
 
+export type PowerFailSafeReason = "silence" | "flameout" | "danger" | "offline-off";
+
 export interface StatusResponse {
   state: GrillState;
   command: GrillCommand;
@@ -62,6 +64,8 @@ export interface StatusResponse {
   probe_targets: Record<ProbeKey, number | null>;
   probe_alerts: Record<ProbeKey, boolean>;
   flameout_alert: boolean;
+  power_failsafe: boolean;
+  power_failsafe_reason: PowerFailSafeReason | null;
   at_set: boolean;
   automation: AutomationStatus;
 }
@@ -88,8 +92,32 @@ export const SETPOINT_MIN = 150;
 export const SETPOINT_MAX = 500;
 export const SETPOINT_STEP = 5;
 export const ONLINE_WINDOW_MS = 15_000;
+/** Stage 2 after the 15s UI-offline window: ntfy + command.power = 0. */
+export const SILENCE_THRESHOLD_MS = 30_000;
+/** Re-notify while still silent; do not fire on every watchdog tick. */
+export const SILENCE_RENOTIFY_MS = 3 * 60 * 1000;
+export const SILENCE_WATCHDOG_INTERVAL_MS = 5_000;
 export const FLAMEOUT_DELTA_F = 35;
 export const FLAMEOUT_DURATION_MS = 8 * 60 * 1000;
+
+export const KNOWN_GRILL_POST_KEYS = [
+  "GrillId",
+  "Temp",
+  "Power",
+  "Probe1",
+  "Probe2",
+  "Probe3",
+  "GrillFlags",
+] as const;
+
+export const DANGER_TOKENS = ["FIRE", "FLAMEOUT", "FLAME OUT", "TIMEOUT", "TIME OUT"] as const;
+
+export const POWER_FAILSAFE_LABELS: Record<PowerFailSafeReason, string> = {
+  silence: "grill silent / Web Ctrl lost",
+  flameout: "software flameout",
+  danger: "danger flag",
+  "offline-off": "grill reported OFF after a long gap",
+};
 
 export const DEFAULT_COMMAND: GrillCommand = {
   setPoint: 175,
@@ -176,8 +204,76 @@ export function isOfflinePower(reported: string): boolean {
   return reported.toUpperCase() === "OFF";
 }
 
-export function shouldResetCommandedPower(commandedPower: number, reported: string): boolean {
+export function shouldResetCommandedPower(
+  commandedPower: number,
+  reported: string,
+  holdOff = false,
+): boolean {
+  if (holdOff) return false;
   return commandedPower === 0 && (isCooldownPower(reported) || isOfflinePower(reported));
+}
+
+export function isReportedOn(reported: string): boolean {
+  return reported.toUpperCase() === "ON";
+}
+
+export function isActiveCookPower(reported: string): boolean {
+  const upper = reported.toUpperCase();
+  return upper === "ON" || isCooldownPower(upper);
+}
+
+export function containsDangerToken(text: string): boolean {
+  const upper = text.toUpperCase();
+  return DANGER_TOKENS.some((token) => upper.includes(token));
+}
+
+export function describePowerFailSafe(reason: PowerFailSafeReason | null | undefined): string {
+  if (!reason) return "";
+  return POWER_FAILSAFE_LABELS[reason] ?? reason;
+}
+
+/** Watch silence when the last POST showed heat/cooldown or a cook session is open. */
+export function shouldWatchSilence(input: {
+  lastSeenEpoch: number;
+  lastReportedPower: string;
+  sessionActive: boolean;
+}): boolean {
+  if (input.lastSeenEpoch <= 0) return false;
+  return input.sessionActive || isActiveCookPower(input.lastReportedPower);
+}
+
+export function isSustainedSilence(
+  lastSeenEpoch: number,
+  now: number,
+  thresholdMs = SILENCE_THRESHOLD_MS,
+): boolean {
+  return lastSeenEpoch > 0 && now - lastSeenEpoch >= thresholdMs;
+}
+
+/**
+ * After a long offline gap, an OFF report must not be answered with power=1
+ * unless the user explicitly turned power on via UI/API.
+ */
+export function shouldHoldPowerOffAfterGap(input: {
+  offlineGapMs: number;
+  reportedPower: string;
+  pendingExplicitPowerOn: boolean;
+}): boolean {
+  if (input.pendingExplicitPowerOn) return false;
+  return input.offlineGapMs >= SILENCE_THRESHOLD_MS && isOfflinePower(input.reportedPower);
+}
+
+export function unknownGrillPostKeys(
+  form: Record<string, string>,
+  alreadySeen: Iterable<string> = [],
+): string[] {
+  const known = new Set<string>(KNOWN_GRILL_POST_KEYS);
+  const seen = new Set(alreadySeen);
+  const unknown: string[] = [];
+  for (const key of Object.keys(form)) {
+    if (!known.has(key) && !seen.has(key)) unknown.push(key);
+  }
+  return unknown;
 }
 
 export function computeOnline(lastSeenEpoch: number, now = Date.now()): boolean {

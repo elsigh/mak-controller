@@ -1,6 +1,6 @@
 "use client";
 
-import type { StatusResponse } from "@makgrill/shared";
+import { describePowerFailSafe, type StatusResponse } from "@makgrill/shared";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -128,6 +128,16 @@ export function AboutStudio({
             <MetaRow
               label="Flameout"
               value={display(status?.flameout_alert)}
+              pending={pending}
+              mono={false}
+            />
+            <MetaRow
+              label="Power fail-safe"
+              value={
+                status?.power_failsafe
+                  ? describePowerFailSafe(status.power_failsafe_reason) || "Yes"
+                  : "No"
+              }
               pending={pending}
               mono={false}
             />

@@ -29,11 +29,32 @@ Upstream: https://github.com/bawilson2/mak-controller (Apache-2.0)
   - `cookMode` (const `1`)
   - `zoneProbe` (const `1`)
   - `power` (`1` = on/allow, `0` = request shutdown/cooldown)
-- After the grill reports `COOL` / `CD` / `OFF` following `power=0`, reset commanded power back to `1`
+- After a **user-initiated** `power=0`, when the grill reports `COOL` / `CD` / `OFF`, reset commanded power back to `1` — except after a fail-safe latch or a ≥30s offline gap that reports `OFF`. Those stay at `power=0` until the user explicitly turns power on via UI/API.
 
 ## Online heuristic
 
 Grill is online if the last POST was less than 15 seconds ago.
+
+## Safety fail-safes (2026-09-20 Web Ctrl blackout)
+
+Two-stage silence policy, plus software flameout and danger-token holds.
+A background watchdog (`setInterval` every 5s) watches `lastSeenEpoch` even when
+`handleGrillPost` is not running — silence is invisible if we only look inside
+the POST handler.
+
+| Stage | Threshold | Action |
+| --- | --- | --- |
+| 1. UI offline | 15s (`ONLINE_WINDOW_MS`) | `is_online=false`; log online→offline |
+| 2. Silence fail-safe | 30s (`SILENCE_THRESHOLD_MS`) | If last Power was ON/COOL **or** a cook session is active: urgent ntfy `"MakGrill: grill silent / Web Ctrl lost"` and `command.power = 0` so the **next** successful poll requests cooldown |
+
+- Re-notify every 3 minutes (`SILENCE_RENOTIFY_MS`) while still silent. Reset when polls resume.
+- Software flameout (pit ≥35°F below setpoint for 8 minutes while ON): urgent ntfy **and** `command.power = 0` (not alert-only).
+- If `GrillFlags` or `Power` contains danger tokens (case-insensitive): `FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, `TIME OUT` → `power=0` + urgent ntfy.
+- After a gap ≥30s, if the grill reports `OFF`, do **not** answer with `power=1` unless the user explicitly turns power on via UI/API. Default/latched `power=1` must not restart a firmware-shutdown grill.
+- Fail-safe `power=0` is latched until that explicit UI/API power-on. The normal COOL/OFF → reset-to-1 path does not undo a latch.
+- Reconnect setpoint adoption (below) is unchanged and can run on the same poll as a power hold.
+
+Online→offline and offline→online transitions are logged with timestamps. Unknown POST form keys are logged once.
 
 ## Reconnect setpoint adoption
 

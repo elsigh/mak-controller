@@ -1,6 +1,6 @@
 "use client";
 
-import type { HistoryResponse, StatusResponse } from "@makgrill/shared";
+import { describePowerFailSafe, type HistoryResponse, type StatusResponse } from "@makgrill/shared";
 import { AlertCircleIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStatus } from "@/hooks/use-status";
@@ -45,6 +45,19 @@ export function Dashboard({
             <AlertTitle>Connection lost</AlertTitle>
             <AlertDescription>
               The grill must POST to <code>/GrillService/Service</code> at least every 15 seconds.
+              {status.power_failsafe
+                ? ` Commanded power was force-zeroed (${describePowerFailSafe(status.power_failsafe_reason)}). The next poll will request cooldown.`
+                : " After 30 seconds of silence, commanded power is force-zeroed."}
+            </AlertDescription>
+          </Alert>
+        )}
+        {status?.power_failsafe && status.is_online && (
+          <Alert variant="destructive" className="rounded-2xl px-4 py-3">
+            <AlertCircleIcon />
+            <AlertTitle>Heat command held at 0</AlertTitle>
+            <AlertDescription>
+              Commanded power was force-zeroed ({describePowerFailSafe(status.power_failsafe_reason)}
+              ). Turn the grill on from the dashboard to resume heat.
             </AlertDescription>
           </Alert>
         )}
@@ -52,7 +65,7 @@ export function Dashboard({
           <Alert className="rounded-2xl border-transparent bg-orange-500 px-4 py-3 text-black">
             <AlertTitle className="text-black">Flameout detected</AlertTitle>
             <AlertDescription className="text-black/80">
-              Pit dropped more than 35°F below setpoint for 8+ minutes.
+              Pit dropped more than 35°F below setpoint for 8+ minutes. Commanded power is 0.
             </AlertDescription>
           </Alert>
         )}

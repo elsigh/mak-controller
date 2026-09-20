@@ -9,6 +9,7 @@ import { GrillRuntime } from "./runtime.ts";
 
 const topic = initDb(config.ntfyTopic);
 const runtime = new GrillRuntime(topic);
+runtime.startWatchdog();
 
 const app = new Hono();
 

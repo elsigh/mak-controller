@@ -19,11 +19,14 @@ Do **not** point the grill at Vercel or any serverless endpoint. The grill needs
 
 ## Features
 
-- Live pit / probes / online / cooldown, with a flameout watchdog (pit >35°F below setpoint for 8 minutes while ON)
+- Live pit / probes / online / cooldown, with a flameout watchdog (pit >35°F below setpoint for 8 minutes while ON) that now commands `power=0`
+- Silence watchdog: if last Power was ON (or a cook session is active) and no POST for 30s, urgent ntfy and `power=0`; re-notify every 3 minutes until polls resume
+- Danger tokens in `GrillFlags`/`Power` (`FIRE`, `FLAMEOUT`, `TIMEOUT`, …) force `power=0` and urgent ntfy
+- After a ≥30s gap, an `OFF` report is not answered with `power=1` unless the user turns power on
 - Setpoint control 150–500°F in 5° steps; shutdown that respects Pellet Boss cooldown
 - Multi-stage recipes (time, probe ≥/≤, hold)
 - Cook sessions with CSV export
-- Optional [ntfy](https://ntfy.sh/) push (probe done, ATSET, stage advance, flameout)
+- Optional [ntfy](https://ntfy.sh/) push (probe done, ATSET, stage advance, flameout, silence, danger)
 - Shared-secret dashboard auth (the grill path stays unauthenticated, as upstream)
 - Installable home-screen app on iPhone (Safari Add to Home Screen)
 
@@ -90,7 +93,8 @@ See [`PROTOCOL.md`](./PROTOCOL.md). Summary:
 
 - Grill POST fields: `GrillId`, `Temp`, `Power`, `Probe1`, `Probe2`, `Probe3`, `GrillFlags`
 - Response is `text/html` and **must** be a quoted query string
-- Online if last POST &lt; 15s; after `power=0` the grill reports `COOL`/`CD`/`OFF` and commanded power resets to `1`
+- Online if last POST &lt; 15s; after 30s of silence (ON/session) commanded power is force-zeroed
+- After user-initiated `power=0` the grill reports `COOL`/`CD`/`OFF` and commanded power resets to `1`, unless a fail-safe latch or long-gap `OFF` is holding heat off
 
 ## Safety
 
