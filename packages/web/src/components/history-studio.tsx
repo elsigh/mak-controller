@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { HistoryResponse } from "@makgrill/shared";
 import { api } from "@/lib/api";
 import { TelemetryChart } from "./telemetry-chart";
 
@@ -12,7 +13,13 @@ type Session = {
   active: number;
 };
 
-export function HistoryStudio({ initialSessions = [] }: { initialSessions?: Session[] }) {
+export function HistoryStudio({
+  initialSessions = [],
+  initialHistory = null,
+}: {
+  initialSessions?: Session[];
+  initialHistory?: HistoryResponse | null;
+}) {
   const [sessions, setSessions] = useState<Session[]>(initialSessions);
   const [selected, setSelected] = useState<number | null>(initialSessions[0]?.id ?? null);
 
@@ -57,7 +64,7 @@ export function HistoryStudio({ initialSessions = [] }: { initialSessions?: Sess
           </div>
         </aside>
         <div className="space-y-3">
-          <TelemetryChart sessionId={selected} />
+          <TelemetryChart sessionId={selected} initialHistory={initialHistory} />
           {selected && (
             <a
               href={`/api/session/export?id=${selected}`}

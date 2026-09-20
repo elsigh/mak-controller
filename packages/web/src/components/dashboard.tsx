@@ -1,6 +1,6 @@
 "use client";
 
-import type { StatusResponse } from "@makgrill/shared";
+import type { HistoryResponse, StatusResponse } from "@makgrill/shared";
 import { useStatus } from "@/hooks/use-status";
 import { PitHero } from "./pit-hero";
 import { ProbeCards } from "./probe-cards";
@@ -10,7 +10,13 @@ import { SetpointControls } from "./setpoint-controls";
 import { StatusPills } from "./status-pills";
 import { TelemetryChart } from "./telemetry-chart";
 
-export function Dashboard({ initialStatus = null }: { initialStatus?: StatusResponse | null }) {
+export function Dashboard({
+  initialStatus = null,
+  initialHistory = null,
+}: {
+  initialStatus?: StatusResponse | null;
+  initialHistory?: HistoryResponse | null;
+}) {
   const { status, error, refresh } = useStatus(2500, initialStatus);
 
   return (
@@ -45,7 +51,7 @@ export function Dashboard({ initialStatus = null }: { initialStatus?: StatusResp
         <SetpointControls status={status} />
       </div>
       <ProbeCards status={status} />
-      <TelemetryChart sessionId={status?.active_session?.id ?? null} />
+      <TelemetryChart sessionId={status?.active_session?.id ?? null} initialHistory={initialHistory} />
       <SessionCard status={status} />
     </div>
   );

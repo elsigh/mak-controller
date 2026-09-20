@@ -1,4 +1,4 @@
-import type { Recipe, StatusResponse } from "@makgrill/shared";
+import type { HistoryResponse, Recipe, StatusResponse } from "@makgrill/shared";
 import { bridgeFetch } from "./bridge";
 
 async function getJson<T>(path: string, fallback: T): Promise<T> {
@@ -23,4 +23,16 @@ export function loadSessions() {
   return getJson<
     Array<{ id: number; name: string; started_at: string; ended_at: string | null; active: number }>
   >("/internal/sessions", []);
+}
+
+export function loadHistory(sessionId?: number | null) {
+  const query = sessionId ? `?sessionId=${sessionId}` : "";
+  return getJson<HistoryResponse>(`/internal/history${query}`, {
+    timestamps: [],
+    grill_temp: [],
+    setpoint: [],
+    probe1: [],
+    probe2: [],
+    probe3: [],
+  });
 }

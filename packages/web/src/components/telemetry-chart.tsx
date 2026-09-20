@@ -25,8 +25,16 @@ function toRows(history: HistoryResponse) {
   }));
 }
 
-export function TelemetryChart({ sessionId }: { sessionId?: number | null }) {
-  const [rows, setRows] = useState<ReturnType<typeof toRows>>([]);
+export function TelemetryChart({
+  sessionId,
+  initialHistory = null,
+}: {
+  sessionId?: number | null;
+  initialHistory?: HistoryResponse | null;
+}) {
+  const [rows, setRows] = useState<ReturnType<typeof toRows>>(() =>
+    initialHistory ? toRows(initialHistory) : [],
+  );
 
   useEffect(() => {
     let alive = true;
