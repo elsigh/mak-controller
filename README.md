@@ -25,6 +25,7 @@ Do **not** point the grill at Vercel or any serverless endpoint. The grill needs
 - Cook sessions with CSV export
 - Optional [ntfy](https://ntfy.sh/) push (probe done, ATSET, stage advance, flameout)
 - Shared-secret dashboard auth (the grill path stays unauthenticated, as upstream)
+- Installable home-screen app on iPhone (Safari Add to Home Screen)
 
 ## Packages
 
@@ -68,6 +69,16 @@ The smoke test starts a temporary bridge, POSTs as a grill, changes the setpoint
 4. The grill must hit **port 80**. The UI is at `http://<lan-ip>/` (bridge proxies to Next.js) or `http://<lan-ip>:3000`.
 
 If the host already owns port 80, use `docker-compose.macvlan.yml` and give the stack its own LAN IP (`CONTAINER_IP`, `PARENT_INTERFACE`, `SUBNET`, `GATEWAY`).
+
+## Install on iPhone
+
+Safari can pin MakGrill to the Home Screen so you do not retype `http://elsigh-studio/` (or your LAN / Tailscale URL).
+
+1. Open the dashboard in **Safari** — Chrome and other browsers will not offer a real home-screen app.
+2. Tap **Share** → **Add to Home Screen**.
+3. Keep the name **MakGrill** and add it. The icon opens standalone, like an app.
+
+Local HTTP is fine on the home LAN. iOS does not require HTTPS for this. If you do not see Add to Home Screen, you are not in Safari.
 
 ### Remote UI via Tailscale
 

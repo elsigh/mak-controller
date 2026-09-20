@@ -6,7 +6,8 @@
     "dev": "next dev --port 3000",
     "build": "next build --webpack",
     "start": "next start --port 3000",
-    "lint": "eslint"
+    "lint": "eslint",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@makgrill/shared": "*",
