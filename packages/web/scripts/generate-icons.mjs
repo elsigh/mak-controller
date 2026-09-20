@@ -115,25 +115,25 @@ function drawIcon(size) {
       const px = (x + 0.5) / size;
       const py = (y + 0.5) / size;
       const i = (y * size + x) * 4;
-      pixels[i] = 9;
-      pixels[i + 1] = 8;
-      pixels[i + 2] = 7;
+      pixels[i] = 7;
+      pixels[i + 1] = 9;
+      pixels[i + 2] = 13;
       pixels[i + 3] = 255;
 
       if (!roundedRect(px, py, badge, radius)) continue;
       const t = (px + py) / 2;
-      pixels[i] = Math.round(mix(245, 255, t));
-      pixels[i + 1] = Math.round(mix(165, 106, t));
-      pixels[i + 2] = Math.round(mix(36, 42, t));
+      pixels[i] = Math.round(mix(232, 93, t));
+      pixels[i + 1] = Math.round(mix(238, 103, t));
+      pixels[i + 2] = Math.round(mix(244, 115, t));
 
       const stroke = 0.11;
       const ink =
         letterM(px, py, 0.2, 0.28, 0.28, 0.44, stroke) ||
         letterG(px, py, 0.5, 0.28, 0.3, 0.44, stroke);
       if (ink) {
-        pixels[i] = 9;
-        pixels[i + 1] = 8;
-        pixels[i + 2] = 7;
+        pixels[i] = 7;
+        pixels[i + 1] = 9;
+        pixels[i + 2] = 13;
       }
     }
   }

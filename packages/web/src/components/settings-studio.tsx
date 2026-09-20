@@ -55,7 +55,7 @@ export function SettingsStudio({ initialStatus = null }: { initialStatus?: Statu
         <TabsContent value="alerts">
           <Panel className="min-h-[16rem]">
             <CardHeader>
-              <CardTitle className="text-xs font-normal uppercase tracking-[0.2em] text-sky-300">
+              <CardTitle className="text-xs font-normal uppercase tracking-[0.2em] text-steel">
                 Push notifications
               </CardTitle>
               <CardDescription>
@@ -64,7 +64,7 @@ export function SettingsStudio({ initialStatus = null }: { initialStatus?: Statu
             </CardHeader>
             <CardContent>
               <form action={saveSettingsAction} className="space-y-4">
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-black/20 px-4 py-3">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[color:var(--bg-elevated)]/70 px-4 py-3">
                   <Label htmlFor="ntfy-enabled" className="text-sm font-normal">
                     Enable ntfy alerts
                   </Label>
@@ -116,7 +116,7 @@ export function SettingsStudio({ initialStatus = null }: { initialStatus?: Statu
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="min-h-7 font-mono text-lg text-sky-300">{status?.state.flags || "None yet"}</p>
+              <p className="min-h-7 font-mono text-lg text-steel">{status?.state.flags || "None yet"}</p>
               <div className="mt-4 h-48 space-y-2 overflow-auto font-mono text-xs">
                 {events.length === 0 && <p className="text-muted-foreground">No flag transitions observed yet.</p>}
                 {events.map((event, i) => (

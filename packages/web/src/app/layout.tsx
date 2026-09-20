@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
   preload: true,
 });
 
-const THEME = "#090807";
+const THEME = "#07090d";
 
 export const viewport: Viewport = {
   themeColor: THEME,

@@ -70,7 +70,7 @@ export function AboutStudio({
           <CardDescription className="min-h-10">
             Unofficial community controller. Derived from{" "}
             <a
-              className="underline decoration-amber-700/60"
+              className="underline decoration-primary/50"
               href="https://github.com/bawilson2/mak-controller"
             >
               {BASE_FORK_SOURCE}

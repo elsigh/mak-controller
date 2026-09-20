@@ -50,9 +50,10 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
   return (
     <svg viewBox="0 0 220 176" className="mx-auto h-44 w-full" preserveAspectRatio="xMidYMid meet">
       <defs>
-        <linearGradient id="pit-gauge-ember" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#f5a524" />
-          <stop offset="100%" stopColor="#ff6a2a" />
+        <linearGradient id="pit-gauge-steel" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#c8d2dc" />
+          <stop offset="70%" stopColor="#b794f6" />
+          <stop offset="100%" stopColor="#8b6cf6" />
         </linearGradient>
       </defs>
       <g
@@ -65,18 +66,18 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
           cx={cx}
           cy={cy}
           r={r}
-          stroke="rgba(255,214,170,0.12)"
+          stroke="rgba(200,210,220,0.2)"
           strokeDasharray={`${trackLen} ${circumference}`}
         />
         <circle
           cx={cx}
           cy={cy}
           r={r}
-          stroke="url(#pit-gauge-ember)"
+          stroke="url(#pit-gauge-steel)"
           strokeDasharray={`${progressLen} ${circumference}`}
         />
       </g>
-      <circle cx={tick.x} cy={tick.y} r="5" fill="#f5a524" />
+      <circle cx={tick.x} cy={tick.y} r="5" fill="#b794f6" />
     </svg>
   );
 }
@@ -214,7 +215,7 @@ function EditableSetpoint({
                 type="button"
                 className={cn(
                   "flex w-full items-center rounded-md px-2 py-1.5 font-mono text-sm tabular-nums outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
-                  temp === current && "bg-accent text-accent-foreground",
+                  temp === current && "bg-primary/18 text-primary",
                 )}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={() => apply(temp)}
@@ -260,7 +261,7 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
     (failSafe || (status.state.power.toUpperCase() !== "ON" && !status.is_cooldown));
 
   return (
-    <Panel className="ember-ring min-h-[22.5rem]">
+    <Panel className="hero-ring min-h-[22.5rem]">
       <CardHeader className="gap-0">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">

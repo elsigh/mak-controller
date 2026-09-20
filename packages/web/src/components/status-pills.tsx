@@ -49,7 +49,7 @@ export function StatusPills({ status }: { status: StatusResponse | null }) {
       {atSet && (
         <Badge
           variant="outline"
-          className="h-8 rounded-full border-amber-400/30 bg-amber-400/10 px-3 text-[11px] uppercase tracking-[0.16em] text-amber-200"
+          className="h-8 rounded-full border-primary/35 bg-primary/12 px-3 text-[11px] uppercase tracking-[0.16em] text-primary"
         >
           At setpoint
         </Badge>

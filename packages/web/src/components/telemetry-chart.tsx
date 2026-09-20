@@ -88,29 +88,29 @@ export function TelemetryChart({
           <div className={ready ? "h-full w-full" : "invisible h-full w-full"}>
             <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
               <LineChart data={rows}>
-                <CartesianGrid stroke="rgba(255,214,170,0.08)" vertical={false} />
-                <XAxis dataKey="time" tick={{ fill: "#b3a394", fontSize: 11 }} minTickGap={28} />
-                <YAxis tick={{ fill: "#b3a394", fontSize: 11 }} unit="°" domain={["auto", "auto"]} />
+                <CartesianGrid stroke="rgba(200,210,220,0.08)" vertical={false} />
+                <XAxis dataKey="time" tick={{ fill: "#a3adbb", fontSize: 11 }} minTickGap={28} />
+                <YAxis tick={{ fill: "#a3adbb", fontSize: 11 }} unit="°" domain={["auto", "auto"]} />
                 <Tooltip
                   contentStyle={{
-                    background: "#14110f",
-                    border: "1px solid rgba(255,214,170,0.12)",
+                    background: "#10141a",
+                    border: "1px solid rgba(200,210,220,0.18)",
                     borderRadius: 12,
                   }}
                 />
-                <Legend wrapperStyle={{ color: "#f6efe6" }} />
-                <Line type="monotone" dataKey="grill" name="Pit" stroke="#ff6a2a" dot={false} strokeWidth={2} />
+                <Legend wrapperStyle={{ color: "#e8eef4" }} />
+                <Line type="monotone" dataKey="grill" name="Pit" stroke="#c8d2dc" dot={false} strokeWidth={2} />
                 <Line
                   type="monotone"
                   dataKey="setpoint"
                   name="Setpoint"
-                  stroke="#f5a524"
+                  stroke="#b794f6"
                   dot={false}
                   strokeDasharray="6 6"
                 />
                 <Line type="monotone" dataKey="probe1" name="Probe 1" stroke="#5cc8ff" dot={false} />
                 <Line type="monotone" dataKey="probe2" name="Probe 2" stroke="#6ee7a8" dot={false} />
-                <Line type="monotone" dataKey="probe3" name="Probe 3" stroke="#d6a4ff" dot={false} />
+                <Line type="monotone" dataKey="probe3" name="Probe 3" stroke="#f0b4d4" dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>

@@ -38,7 +38,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 py-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6">
       <header className="mb-6 flex h-14 items-center justify-between gap-3">
         <Link href="/" className="flex min-w-0 items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 text-sm font-black text-black shadow-[0_0_24px_rgba(255,122,24,0.35)]">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#e8eef4] via-[#9aa5b3] to-[#5d6773] text-sm font-black text-[#07090d] shadow-[0_0_20px_rgba(183,148,246,0.22)] ring-1 ring-white/25">
             MG
           </span>
           <span className="min-w-0">
@@ -49,7 +49,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-1 rounded-full border border-border bg-black/20 p-1 md:flex">
+        <nav className="hidden items-center gap-1 rounded-full border border-border bg-[color:var(--bg-elevated)]/70 p-1 shadow-[inset_0_1px_0_rgba(232,238,244,0.08)] md:flex">
           {LINKS.map((link) => {
             const active = pathname === link.href;
             return (
