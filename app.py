@@ -6,6 +6,7 @@ import time
 import datetime
 import sqlite3
 import logging
+import threading
 import urllib.request
 from flask import Flask, request, Response, jsonify, render_template_string
 
@@ -23,12 +24,30 @@ app = Flask(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", "cooks.db")
 
+# Safety fail-safe thresholds (Web Ctrl silence / pellet-dump incident)
+ONLINE_WINDOW_S = 15.0
+SILENCE_THRESHOLD_S = 30.0
+SILENCE_RENOTIFY_S = 180.0
+SILENCE_WATCHDOG_INTERVAL_S = 5.0
+FLAMEOUT_DELTA_F = 35
+FLAMEOUT_DURATION_S = 480
+DANGER_TOKENS = ("FIRE", "FLAMEOUT", "FLAME OUT", "TIMEOUT", "TIME OUT")
+
+state_lock = threading.Lock()
+
 last_seen_epoch = 0.0
 prev_flags = None
 
 # Flameout Watchdog State
 flameout_start_epoch = None
 flameout_triggered = False
+
+# Silence / danger fail-safe state
+logged_online = False
+silence_notified_at = 0.0
+power_failsafe = None
+danger_alerted = False
+pending_explicit_power_on = False
 
 # ATSET Notification State
 at_set_alerted = False
@@ -297,6 +316,148 @@ def evaluate_automation(now):
             logger.info("[AUTOMATION] %s", msg)
             send_push_notification("Automation Complete", msg, "high")
 
+def contains_danger_token(*texts):
+    haystack = " ".join(str(t or "") for t in texts).upper()
+    return any(token in haystack for token in DANGER_TOKENS)
+
+def is_active_cook_power(reported):
+    upper = (reported or "").upper()
+    return upper == "ON" or "COOL" in upper or upper == "CD"
+
+def should_watch_silence(last_seen, last_power, session_active):
+    if last_seen <= 0:
+        return False
+    return bool(session_active) or is_active_cook_power(last_power)
+
+def is_sustained_silence(last_seen, now, threshold=SILENCE_THRESHOLD_S):
+    return last_seen > 0 and (now - last_seen) >= threshold
+
+def should_hold_power_off_after_gap(offline_gap_s, reported_power, explicit_on):
+    if explicit_on:
+        return False
+    return offline_gap_s >= SILENCE_THRESHOLD_S and (reported_power or "").upper() == "OFF"
+
+def encode_grill_response():
+    return (
+        f'"setPoint={grill_command["setPoint"]}'
+        f'&potStatus={grill_command["potStatus"]}'
+        f'&cookMode={grill_command["cookMode"]}'
+        f'&zoneProbe={grill_command["zoneProbe"]}'
+        f'&power={grill_command["power"]}"'
+    )
+
+def force_power_off(reason, message):
+    global power_failsafe
+    already_held = grill_command["power"] == 0 and power_failsafe == reason
+    grill_command["power"] = 0
+    power_failsafe = reason
+    if not already_held:
+        logger.warning(message)
+
+def note_poll_resumed(was_online, previous_seen, now):
+    global logged_online, silence_notified_at
+    if not was_online:
+        if previous_seen <= 0:
+            origin = "first poll"
+        else:
+            origin = "offline for %.0fs" % (now - previous_seen)
+        logger.info("Grill back online (%s; Power=%s).", origin, grill_state["power"])
+    logged_online = True
+    silence_notified_at = 0.0
+
+def evaluate_danger_flags():
+    global danger_alerted
+    if not contains_danger_token(grill_state.get("flags"), grill_state.get("power")):
+        danger_alerted = False
+        return
+    if danger_alerted:
+        return
+    danger_alerted = True
+    force_power_off(
+        "danger",
+        "[ALARM] Danger token in GrillFlags/Power ('%s' / '%s'). Commanding power=0."
+        % (grill_state["flags"], grill_state["power"]),
+    )
+    send_push_notification(
+        "MAK Grill: danger flag",
+        "GrillFlags='%s' Power='%s'. Commanded power set to 0."
+        % (grill_state["flags"], grill_state["power"]),
+        "urgent",
+    )
+
+def apply_power_reconnect_policy(previous_seen, now):
+    global pending_explicit_power_on
+    if previous_seen <= 0:
+        offline_gap = float("inf")
+        gap_label = "never seen"
+    else:
+        offline_gap = now - previous_seen
+        gap_label = "%.0fs" % offline_gap
+
+    if pending_explicit_power_on:
+        pending_explicit_power_on = False
+        return
+
+    if should_hold_power_off_after_gap(offline_gap, grill_state["power"], False):
+        force_power_off(
+            "offline-off",
+            "Long offline gap (%s) and grill reports OFF; holding commanded power at 0 until explicit UI/API power-on."
+            % gap_label,
+        )
+        return
+
+    reported_pwr = grill_state["power"].upper()
+    if power_failsafe:
+        return
+
+    if grill_command["power"] == 0 and ("COOL" in reported_pwr or "CD" in reported_pwr or reported_pwr == "OFF"):
+        logger.info("Cooldown acknowledged by grill (%s). Resetting power command to 1.", reported_pwr)
+        grill_command["power"] = 1
+
+def tick_silence_watchdog(now=None):
+    """Independent of the POST handler. Silence is invisible if we only look inside grill_service."""
+    global logged_online, silence_notified_at
+    if now is None:
+        now = time.time()
+    with state_lock:
+        is_online = last_seen_epoch > 0 and (now - last_seen_epoch) < ONLINE_WINDOW_S
+        if logged_online and not is_online and last_seen_epoch > 0:
+            silent_for = now - last_seen_epoch
+            logger.warning(
+                "Grill went offline (last POST %.0fs ago, last Power=%s).",
+                silent_for,
+                grill_state["power"],
+            )
+            logged_online = False
+
+        if not is_sustained_silence(last_seen_epoch, now):
+            return
+
+        session_active = False
+        try:
+            session_active = get_active_session_id() is not None
+        except Exception:
+            session_active = False
+
+        if not should_watch_silence(last_seen_epoch, grill_state["power"], session_active):
+            return
+
+        silent_for = now - last_seen_epoch
+        force_power_off(
+            "silence",
+            "Silence fail-safe: no grill POST for %.0fs while last Power=%s; commanding power=0 so the next poll requests cooldown."
+            % (silent_for, grill_state["power"]),
+        )
+
+        if silence_notified_at == 0 or (now - silence_notified_at) >= SILENCE_RENOTIFY_S:
+            silence_notified_at = now
+            send_push_notification(
+                "MAK Grill: grill silent / Web Ctrl lost",
+                "No POST for %.0fs. Last Power=%s. Commanded power set to 0."
+                % (silent_for, grill_state["power"]),
+                "urgent",
+            )
+
 # --- Frontend HTML / JS ---
 
 HTML_TEMPLATE = """
@@ -410,6 +571,9 @@ HTML_TEMPLATE = """
         </div>
         <div id="alertFlameout" class="flameout-bar" style="display: none;">
             ⚠️ FLAMEOUT DETECTED &mdash; Pit temp dropped >35°F below setpoint for 8+ minutes
+        </div>
+        <div id="alertFailsafe" class="alert-bar" style="display: none;">
+            SAFETY HOLD &mdash; commanded power=0 until you turn the grill on
         </div>
 
         <!-- 1. Status Section -->
@@ -982,6 +1146,13 @@ HTML_TEMPLATE = """
                 document.getElementById('dispFlags').innerText = data.state.flags || 'None';
 
                 document.getElementById('alertFlameout').style.display = data.flameout_alert ? 'block' : 'none';
+                const failsafeBar = document.getElementById('alertFailsafe');
+                if (data.power_failsafe) {
+                    failsafeBar.style.display = 'block';
+                    failsafeBar.innerText = 'SAFETY HOLD — commanded power=0 (' + (data.power_failsafe_reason || 'fail-safe') + ') until you turn the grill on';
+                } else {
+                    failsafeBar.style.display = 'none';
+                }
 
                 handleProbeDisplay(1, data.state.probe1, data.probe_targets.probe1, data.probe_alerts.probe1);
                 handleProbeDisplay(2, data.state.probe2, data.probe_targets.probe2, data.probe_alerts.probe2);
@@ -1213,123 +1384,140 @@ HTML_TEMPLATE = """
 def dashboard():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/GrillService/Service', methods=['POST'])
-def grill_service():
+def process_grill_post(form, now=None):
+    """Apply inbound grill telemetry and return the quoted command string."""
     global last_seen_epoch, prev_flags, flameout_start_epoch, flameout_triggered
     global at_set_alerted, last_alerted_setpoint
-    now = time.time()
-    now_dt = datetime.datetime.now()
-    last_seen_epoch = now
+    if now is None:
+        now = time.time()
+    now_dt = datetime.datetime.fromtimestamp(now)
 
-    form = request.form
-    grill_state["grill_id"] = form.get("GrillId", "Unknown")
-    grill_state["temp"] = form.get("Temp", "--")
-    grill_state["power"] = form.get("Power", "OFF")
-    grill_state["probe1"] = form.get("Probe1", "")
-    grill_state["probe2"] = form.get("Probe2", "")
-    grill_state["probe3"] = form.get("Probe3", "")
-    grill_state["flags"] = form.get("GrillFlags", "")
-    grill_state["last_seen"] = now_dt.strftime("%H:%M:%S")
+    with state_lock:
+        previous_seen = last_seen_epoch
+        was_online = previous_seen > 0 and (now - previous_seen) < ONLINE_WINDOW_S
 
-    time_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
-    session_id = get_active_session_id()
-    pit_temp = parse_val(grill_state["temp"])
-    setpoint = parse_val(grill_command["setPoint"])
+        grill_state["grill_id"] = form.get("GrillId", "Unknown")
+        grill_state["temp"] = form.get("Temp", "--")
+        grill_state["power"] = form.get("Power", "OFF")
+        grill_state["probe1"] = form.get("Probe1", "")
+        grill_state["probe2"] = form.get("Probe2", "")
+        grill_state["probe3"] = form.get("Probe3", "")
+        grill_state["flags"] = form.get("GrillFlags", "")
+        grill_state["last_seen"] = now_dt.strftime("%H:%M:%S")
+        last_seen_epoch = now
+        note_poll_resumed(was_online, previous_seen, now)
 
-    # 1. Telemetry Persistence
-    with get_db_connection() as conn:
-        conn.execute("""
-            INSERT INTO telemetry (session_id, timestamp, grill_temp, setpoint, probe1, probe2, probe3, power, grill_flags)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            session_id,
-            time_str,
-            pit_temp,
-            setpoint,
-            parse_val(grill_state["probe1"]),
-            parse_val(grill_state["probe2"]),
-            parse_val(grill_state["probe3"]),
-            grill_state["power"],
-            grill_state["flags"]
-        ))
+        time_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+        session_id = get_active_session_id()
+        pit_temp = parse_val(grill_state["temp"])
+        setpoint = parse_val(grill_command["setPoint"])
 
-        if prev_flags is not None and grill_state["flags"] != prev_flags:
-            analysis = analyze_bitmask_diff(prev_flags, grill_state["flags"])
-            logger.debug("GrillFlags Changed: '%s' -> '%s' | %s", prev_flags, grill_state["flags"], analysis)
+        # 1. Telemetry Persistence
+        with get_db_connection() as conn:
             conn.execute("""
-                INSERT INTO flag_events (timestamp, field_name, old_val, new_val, bit_diff, context)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (time_str, "GrillFlags", str(prev_flags), str(grill_state["flags"]), analysis, f"Temp: {grill_state['temp']} | Power: {grill_state['power']}"))
+                INSERT INTO telemetry (session_id, timestamp, grill_temp, setpoint, probe1, probe2, probe3, power, grill_flags)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                session_id,
+                time_str,
+                pit_temp,
+                setpoint,
+                parse_val(grill_state["probe1"]),
+                parse_val(grill_state["probe2"]),
+                parse_val(grill_state["probe3"]),
+                grill_state["power"],
+                grill_state["flags"]
+            ))
 
-        conn.commit()
+            if prev_flags is not None and grill_state["flags"] != prev_flags:
+                analysis = analyze_bitmask_diff(prev_flags, grill_state["flags"])
+                logger.debug("GrillFlags Changed: '%s' -> '%s' | %s", prev_flags, grill_state["flags"], analysis)
+                conn.execute("""
+                    INSERT INTO flag_events (timestamp, field_name, old_val, new_val, bit_diff, context)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (time_str, "GrillFlags", str(prev_flags), str(grill_state["flags"]), analysis, f"Temp: {grill_state['temp']} | Power: {grill_state['power']}"))
 
-    prev_flags = grill_state["flags"]
+            conn.commit()
 
-    # 2. Automation Engine
-    evaluate_automation(now)
+        prev_flags = grill_state["flags"]
 
-    # 3. Probe Target Alarms
-    for p_key in ["probe1", "probe2", "probe3"]:
-        target = probe_targets[p_key]
-        current = parse_val(grill_state[p_key])
-        if target is not None and current is not None and current >= target:
-            if not probe_alerted[p_key]:
-                probe_alerted[p_key] = True
-                logger.info("[ALARM] %s reached target %d°F (Current: %d°F)", p_key.upper(), target, current)
-                send_push_notification(f"MAK Grill Alert: {p_key.upper()} Done!", f"Temperature is {current}°F (Target: {target}°F)", "high")
-        else:
-            if current is not None and target is not None and current < (target - 3):
-                probe_alerted[p_key] = False
+        # 2. Automation Engine
+        evaluate_automation(now)
 
-    # 4. Target Setpoint (ATSET) Notification
-    flags_upper = grill_state["flags"].upper()
-    if setpoint != last_alerted_setpoint:
-        at_set_alerted = False
+        # 3. Probe Target Alarms
+        for p_key in ["probe1", "probe2", "probe3"]:
+            target = probe_targets[p_key]
+            current = parse_val(grill_state[p_key])
+            if target is not None and current is not None and current >= target:
+                if not probe_alerted[p_key]:
+                    probe_alerted[p_key] = True
+                    logger.info("[ALARM] %s reached target %d°F (Current: %d°F)", p_key.upper(), target, current)
+                    send_push_notification(f"MAK Grill Alert: {p_key.upper()} Done!", f"Temperature is {current}°F (Target: {target}°F)", "high")
+            else:
+                if current is not None and target is not None and current < (target - 3):
+                    probe_alerted[p_key] = False
 
-    if "ATSET" in flags_upper:
-        if not at_set_alerted:
-            at_set_alerted = True
-            last_alerted_setpoint = setpoint
-            logger.info("[NOTIFICATION] Pit reached setpoint (%d°F)", setpoint)
-            send_push_notification(
-                "MAK Grill: Target Temp Reached",
-                f"Pit reached setpoint of {setpoint}°F (Current: {pit_temp}°F).",
-                "default"
-            )
-    else:
-        if pit_temp is not None and setpoint is not None and pit_temp < (setpoint - 15):
+        # 4. Target Setpoint (ATSET) Notification
+        flags_upper = grill_state["flags"].upper()
+        if setpoint != last_alerted_setpoint:
             at_set_alerted = False
 
-    # 5. Flameout Watchdog
-    reported_pwr = grill_state["power"].upper()
-    if reported_pwr == "ON" and pit_temp is not None and setpoint is not None:
-        if pit_temp < (setpoint - 35):
-            if flameout_start_epoch is None:
-                flameout_start_epoch = now
-            elif (now - flameout_start_epoch) >= 480:
-                if not flameout_triggered:
-                    flameout_triggered = True
-                    logger.warning("[ALARM] Flameout detected! Pit temp dropped to %s°F (Setpoint: %s°F)", pit_temp, setpoint)
-                    send_push_notification("MAK Grill Flameout Warning!", f"Pit temp dropped to {pit_temp}°F (Setpoint: {setpoint}°F)", "urgent")
+        if "ATSET" in flags_upper:
+            if not at_set_alerted:
+                at_set_alerted = True
+                last_alerted_setpoint = setpoint
+                logger.info("[NOTIFICATION] Pit reached setpoint (%d°F)", setpoint)
+                send_push_notification(
+                    "MAK Grill: Target Temp Reached",
+                    f"Pit reached setpoint of {setpoint}°F (Current: {pit_temp}°F).",
+                    "default"
+                )
+        else:
+            if pit_temp is not None and setpoint is not None and pit_temp < (setpoint - 15):
+                at_set_alerted = False
+
+        # 5. Danger tokens in GrillFlags / Power
+        evaluate_danger_flags()
+
+        # 6. Flameout Watchdog (also commands power=0)
+        reported_pwr = grill_state["power"].upper()
+        if reported_pwr == "ON" and pit_temp is not None and setpoint is not None:
+            if pit_temp < (setpoint - FLAMEOUT_DELTA_F):
+                if flameout_start_epoch is None:
+                    flameout_start_epoch = now
+                elif (now - flameout_start_epoch) >= FLAMEOUT_DURATION_S:
+                    if not flameout_triggered:
+                        flameout_triggered = True
+                        force_power_off(
+                            "flameout",
+                            "[ALARM] Flameout detected! Pit temp dropped to %s°F (Setpoint: %s°F). Commanding power=0."
+                            % (pit_temp, setpoint),
+                        )
+                        send_push_notification(
+                            "MAK Grill Flameout Warning!",
+                            f"Pit temp dropped to {pit_temp}°F (Setpoint: {setpoint}°F). Commanded power set to 0.",
+                            "urgent",
+                        )
+            else:
+                flameout_start_epoch = None
+                flameout_triggered = False
         else:
             flameout_start_epoch = None
             flameout_triggered = False
-    else:
-        flameout_start_epoch = None
-        flameout_triggered = False
 
-    # 6. Outbound Command Reset on Shutdown
-    if grill_command["power"] == 0 and ("COOL" in reported_pwr or "CD" in reported_pwr or reported_pwr == "OFF"):
-        logger.info("Cooldown acknowledged by grill (%s). Resetting power command to 1.", reported_pwr)
-        grill_command["power"] = 1
+        # 7. Outbound command: hold fail-safes; otherwise reset after COOL/OFF
+        apply_power_reconnect_policy(previous_seen, now)
+        return encode_grill_response()
 
-    payload = f'"setPoint={grill_command["setPoint"]}&potStatus={grill_command["potStatus"]}&cookMode={grill_command["cookMode"]}&zoneProbe={grill_command["zoneProbe"]}&power={grill_command["power"]}"'
+@app.route('/GrillService/Service', methods=['POST'])
+def grill_service():
+    payload = process_grill_post(request.form)
     return Response(payload, status=200, mimetype='text/html')
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
     now = time.time()
-    is_online = (now - last_seen_epoch) < 15.0 if last_seen_epoch > 0 else False
+    is_online = (now - last_seen_epoch) < ONLINE_WINDOW_S if last_seen_epoch > 0 else False
     reported_pwr = grill_state["power"].upper()
     is_cooldown = is_online and (
         "COOL" in reported_pwr or reported_pwr == "CD" or (grill_command["power"] == 0 and reported_pwr != "OFF")
@@ -1361,6 +1549,8 @@ def get_status():
         "probe_targets": probe_targets,
         "probe_alerts": probe_alerted,
         "flameout_alert": flameout_triggered,
+        "power_failsafe": power_failsafe is not None,
+        "power_failsafe_reason": power_failsafe,
         "at_set": "ATSET" in grill_state["flags"].upper(),
         "automation": auto_data
     })
@@ -1618,21 +1808,54 @@ def set_setpoint():
 
 @app.route('/api/power', methods=['POST'])
 def set_power():
+    global power_failsafe, pending_explicit_power_on
     state = request.args.get('state', type=int)
     now = time.time()
-    is_online = (now - last_seen_epoch) < 15.0 if last_seen_epoch > 0 else False
-    reported_pwr = grill_state["power"].upper()
-    is_cooldown = is_online and (
-        "COOL" in reported_pwr or reported_pwr == "CD" or (grill_command["power"] == 0 and reported_pwr != "OFF")
-    )
+    with state_lock:
+        is_online = (now - last_seen_epoch) < ONLINE_WINDOW_S if last_seen_epoch > 0 else False
+        reported_pwr = grill_state["power"].upper()
+        is_cooldown = is_online and (
+            "COOL" in reported_pwr or reported_pwr == "CD" or (grill_command["power"] == 0 and reported_pwr != "OFF")
+        )
 
-    if is_cooldown and state == 1:
-        return jsonify({"success": False, "error": "Grill is cooling down"}), 400
+        if state == 1 and power_failsafe:
+            logger.info("Clearing power fail-safe (%s) after explicit UI/API power-on.", power_failsafe)
+            power_failsafe = None
+            pending_explicit_power_on = True
+            grill_command["power"] = 1
+            return jsonify({"success": True, "power": 1})
 
-    if state in (0, 1):
-        grill_command["power"] = state
-        return jsonify({"success": True, "power": state})
+        if is_cooldown and state == 1:
+            return jsonify({"success": False, "error": "Grill is cooling down"}), 400
+
+        if state in (0, 1):
+            grill_command["power"] = state
+            pending_explicit_power_on = state == 1
+            return jsonify({"success": True, "power": state})
     return jsonify({"success": False, "error": "Invalid state"}), 400
+
+def _silence_watchdog_loop():
+    while True:
+        time.sleep(SILENCE_WATCHDOG_INTERVAL_S)
+        try:
+            tick_silence_watchdog()
+        except Exception:
+            logger.exception("Silence watchdog tick failed")
+
+# Silence is invisible if we only look inside the POST handler.
+if os.environ.get("MAK_SKIP_WATCHDOG") != "1":
+    _watchdog_thread = threading.Thread(
+        target=_silence_watchdog_loop,
+        name="silence-watchdog",
+        daemon=True,
+    )
+    _watchdog_thread.start()
+    logger.info(
+        "Silence watchdog started (threshold=%.0fs, renotify=%.0fs, interval=%.0fs)",
+        SILENCE_THRESHOLD_S,
+        SILENCE_RENOTIFY_S,
+        SILENCE_WATCHDOG_INTERVAL_S,
+    )
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80)
