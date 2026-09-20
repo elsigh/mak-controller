@@ -12,14 +12,14 @@ type Session = {
   active: number;
 };
 
-export function HistoryStudio() {
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [selected, setSelected] = useState<number | null>(null);
+export function HistoryStudio({ initialSessions = [] }: { initialSessions?: Session[] }) {
+  const [sessions, setSessions] = useState<Session[]>(initialSessions);
+  const [selected, setSelected] = useState<number | null>(initialSessions[0]?.id ?? null);
 
   useEffect(() => {
     void api.sessions().then((list) => {
       setSessions(list);
-      setSelected(list[0]?.id ?? null);
+      setSelected((current) => current ?? list[0]?.id ?? null);
     });
   }, []);
 

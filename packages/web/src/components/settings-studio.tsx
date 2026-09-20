@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { StatusResponse } from "@makgrill/shared";
+import { saveSettingsAction } from "@/app/actions";
 import { useStatus } from "@/hooks/use-status";
 import { api } from "@/lib/api";
 
-export function SettingsStudio() {
-  const { status } = useStatus();
+export function SettingsStudio({ initialStatus = null }: { initialStatus?: StatusResponse | null }) {
+  const { status } = useStatus(2500, initialStatus);
   const [topic, setTopic] = useState("");
   const [note, setNote] = useState("");
   const [events, setEvents] = useState<
@@ -32,18 +34,15 @@ export function SettingsStudio() {
         <p className="mt-2 text-sm text-[var(--muted)]">
           Topic name (for ntfy.sh) or a full self-hosted URL. Leave empty to disable.
         </p>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <form action={saveSettingsAction} className="mt-4 flex flex-col gap-2 sm:flex-row">
           <input
+            name="ntfy_topic"
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             placeholder="my-mak-grill"
             className="w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3"
           />
-          <button
-            type="button"
-            onClick={() => void api.saveSettings(topic).then(() => setNote("Saved"))}
-            className="rounded-2xl bg-sky-500 px-4 py-3 font-semibold"
-          >
+          <button type="submit" className="rounded-2xl bg-sky-500 px-4 py-3 font-semibold">
             Save
           </button>
           <button
@@ -53,7 +52,7 @@ export function SettingsStudio() {
           >
             Test
           </button>
-        </div>
+        </form>
         {note && <p className="mt-3 text-sm text-emerald-300">{note}</p>}
       </section>
       <section className="panel rounded-3xl p-5">

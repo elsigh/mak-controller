@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { formatStageRule, type Recipe, type RecipeStage, type TriggerType } from "@makgrill/shared";
+import { useState } from "react";
+import { formatStageRule, type Recipe, type RecipeStage, type StatusResponse, type TriggerType } from "@makgrill/shared";
 import { useStatus } from "@/hooks/use-status";
 import { api } from "@/lib/api";
 import { RecipeRunner } from "./recipe-runner";
@@ -14,9 +14,15 @@ const emptyStage = (index: number): RecipeStage => ({
   trigger_val: 60,
 });
 
-export function RecipeStudio() {
-  const { status, refresh } = useStatus();
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
+export function RecipeStudio({
+  initialRecipes = [],
+  initialStatus = null,
+}: {
+  initialRecipes?: Recipe[];
+  initialStatus?: StatusResponse | null;
+}) {
+  const { status, refresh } = useStatus(2500, initialStatus);
+  const [recipes, setRecipes] = useState<Recipe[]>(initialRecipes);
   const [selected, setSelected] = useState<number | "new" | "">("");
   const [name, setName] = useState("");
   const [stages, setStages] = useState<RecipeStage[]>([]);
@@ -26,10 +32,6 @@ export function RecipeStudio() {
     const list = await api.recipes();
     setRecipes(list);
   }
-
-  useEffect(() => {
-    void api.recipes().then(setRecipes);
-  }, []);
 
   function pick(value: string) {
     if (value === "new") {

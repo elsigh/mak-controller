@@ -1,6 +1,6 @@
 import { Dashboard } from "@/components/dashboard";
 import { Shell } from "@/components/shell";
-import { loadStatus } from "@/lib/load-status";
+import { loadStatus } from "@/lib/load-bridge";
 
 export const dynamic = "force-dynamic";
 

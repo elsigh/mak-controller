@@ -42,11 +42,11 @@ export function Dashboard({ initialStatus = null }: { initialStatus?: StatusResp
       <RecipeRunner status={status} onChange={refresh} />
       <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <PitHero status={status} />
-        <SetpointControls status={status} onChange={refresh} />
+        <SetpointControls status={status} />
       </div>
       <ProbeCards status={status} />
       <TelemetryChart sessionId={status?.active_session?.id ?? null} />
-      <SessionCard status={status} onChange={refresh} />
+      <SessionCard status={status} />
     </div>
   );
 }
