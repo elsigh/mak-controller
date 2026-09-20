@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { fieldClass } from "@/lib/ui";
+import { compactTempClass, fieldClass } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { Panel } from "./panel";
 
@@ -52,11 +52,12 @@ export function ProbeCards({ status }: { status: StatusResponse | null }) {
     <section className="grid gap-3 md:grid-cols-3">
       {PROBES.map((probe) => {
         const raw = status?.is_online ? status.state[probe.key] : "";
-        const value = raw ? `${raw}°F` : "Unplugged";
+        const pluggedIn = Boolean(raw);
+        const value = pluggedIn ? `${raw}°F` : "Unplugged";
         const target = status?.probe_targets[probe.key];
         const alerting = Boolean(status?.probe_alerts[probe.key]);
         return (
-          <Panel key={probe.key} className={cn("min-h-[12.5rem]", alerting && "probe-alert")}>
+          <Panel key={probe.key} className={cn("gap-2", alerting && "probe-alert")}>
             <CardHeader>
               <CardTitle className="text-xs font-normal uppercase tracking-[0.2em]" style={{ color: probe.color }}>
                 {probe.label}
@@ -67,23 +68,27 @@ export function ProbeCards({ status }: { status: StatusResponse | null }) {
                 <Skeleton className="h-9 w-28" />
               )}
             </CardHeader>
-            <CardContent>
-              <Label className="flex-col items-start gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                Target °F
-                <Input
-                  type="number"
-                  min={100}
-                  max={220}
-                  defaultValue={target ?? ""}
-                  key={`${probe.key}-${target ?? "none"}`}
-                  onBlur={(e) => {
-                    const next = e.target.value ? Number(e.target.value) : null;
-                    void api.setProbeTarget(probe.key, next);
-                  }}
-                  className={`${fieldClass} font-mono normal-case tracking-normal`}
-                />
-              </Label>
-            </CardContent>
+            {pluggedIn ? (
+              <CardContent>
+                <Label className="w-fit flex-col items-start gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  Target °F
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={100}
+                    max={220}
+                    defaultValue={target ?? ""}
+                    key={`${probe.key}-${target ?? "none"}`}
+                    onBlur={(e) => {
+                      const next = e.target.value ? Number(e.target.value) : null;
+                      void api.setProbeTarget(probe.key, next);
+                    }}
+                    className={`${fieldClass} ${compactTempClass} normal-case tracking-normal`}
+                    aria-label={`${probe.label} target °F`}
+                  />
+                </Label>
+              </CardContent>
+            ) : null}
           </Panel>
         );
       })}
