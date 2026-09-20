@@ -184,6 +184,31 @@ export function computeOnline(lastSeenEpoch: number, now = Date.now()): boolean 
   return lastSeenEpoch > 0 && now - lastSeenEpoch < ONLINE_WINDOW_MS;
 }
 
+/**
+ * Grill POSTs do not include the local panel setpoint. On offline → online
+ * (including the first poll after bridge boot), adopt clampSetpoint(pit Temp)
+ * so a stale web command buffer cannot overwrite a panel change.
+ *
+ * Skip when:
+ * - the grill was already inside the online window (pit wobble must not rewrite SP)
+ * - recipe automation is driving setpoint
+ * - a UI/API setpoint is still pending (set after the last online delivery)
+ * - pit Temp is missing/unparseable
+ */
+export function shouldAdoptPitSetpoint(input: {
+  wasOnline: boolean;
+  automationActive: boolean;
+  pendingExplicitSetpoint: boolean;
+  pitTemp: number | null;
+}): boolean {
+  return (
+    !input.wasOnline &&
+    !input.automationActive &&
+    !input.pendingExplicitSetpoint &&
+    input.pitTemp !== null
+  );
+}
+
 export function computeCooldown(
   isOnline: boolean,
   reportedPower: string,

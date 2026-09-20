@@ -35,6 +35,21 @@ Upstream: https://github.com/bawilson2/mak-controller (Apache-2.0)
 
 Grill is online if the last POST was less than 15 seconds ago.
 
+## Reconnect setpoint adoption
+
+Grill POSTs do not include the local panel setpoint. After the grill has been
+offline (last POST outside the 15s window, including the first poll after
+bridge boot), the bridge adopts `clampSetpoint(pit Temp)` so a stale web
+command buffer cannot overwrite a panel change when Web Ctrl comes back.
+
+Exceptions:
+- Active recipe automation keeps driving setpoint
+- A UI/API setpoint set since the last poll (pending, never delivered) is honored
+- Missing/invalid pit Temp: keep the command buffer
+
+Power command is unchanged on reconnect. Pit wobble while continuously online
+does not rewrite setpoint.
+
 ## Human control
 
 Desired setpoint/power live in bridge memory (single writer) and take effect on the **next** grill poll.

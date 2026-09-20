@@ -9,6 +9,7 @@ import {
   computeOnline,
   encodeGrillResponse,
   parseNumber,
+  shouldAdoptPitSetpoint,
   shouldResetCommandedPower,
 } from "@makgrill/shared";
 import type {
@@ -44,6 +45,8 @@ export class GrillRuntime {
   private command: GrillCommand = { ...DEFAULT_COMMAND };
   private state: GrillState = { ...DEFAULT_STATE };
   private lastSeenEpoch = 0;
+  /** True after setSetpoint until the command is delivered on a grill poll. */
+  private pendingExplicitSetpoint = false;
   private prevFlags: string | null = null;
   private flameoutStartEpoch: number | null = null;
   private flameoutTriggered = false;
@@ -89,10 +92,9 @@ export class GrillRuntime {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   }
 
-  handleGrillPost(form: Record<string, string>): string {
-    const now = Date.now();
+  handleGrillPost(form: Record<string, string>, now = Date.now()): string {
     const clock = new Date(now);
-    this.lastSeenEpoch = now;
+    const wasOnline = computeOnline(this.lastSeenEpoch, now);
 
     this.state = {
       grill_id: form.GrillId || "Unknown",
@@ -105,9 +107,12 @@ export class GrillRuntime {
       last_seen: clock.toTimeString().slice(0, 8),
     };
 
+    const pitTemp = parseNumber(this.state.temp);
+    this.maybeAdoptSetpointOnReconnect(wasOnline, pitTemp);
+    this.lastSeenEpoch = now;
+
     const timestamp = this.nowStamp(clock);
     const session = getActiveSession();
-    const pitTemp = parseNumber(this.state.temp);
     const setpoint = parseNumber(this.command.setPoint);
 
     insertTelemetry({
@@ -147,6 +152,52 @@ export class GrillRuntime {
     }
 
     return encodeGrillResponse(this.command);
+  }
+
+  private maybeAdoptSetpointOnReconnect(wasOnline: boolean, pitTemp: number | null) {
+    if (wasOnline) {
+      this.pendingExplicitSetpoint = false;
+      return;
+    }
+
+    if (
+      pitTemp !== null &&
+      shouldAdoptPitSetpoint({
+        wasOnline,
+        automationActive: this.automation.active,
+        pendingExplicitSetpoint: this.pendingExplicitSetpoint,
+        pitTemp,
+      })
+    ) {
+      const previous = this.command.setPoint;
+      const adopted = clampSetpoint(pitTemp);
+      this.command.setPoint = adopted;
+      const origin = this.lastSeenEpoch === 0 ? "never seen" : "offline";
+      log(
+        "INFO",
+        `Adopting pit-based setpoint on reconnect: ${previous}°F → ${adopted}°F (pit ${pitTemp}°F; grill was ${origin}).`,
+      );
+      return;
+    }
+
+    if (this.automation.active) {
+      log(
+        "INFO",
+        `Reconnect: keeping command setpoint ${this.command.setPoint}°F because recipe automation is active.`,
+      );
+    } else if (this.pendingExplicitSetpoint) {
+      log(
+        "INFO",
+        `Reconnect: keeping pending UI/API setpoint ${this.command.setPoint}°F (set while grill was offline).`,
+      );
+    } else if (pitTemp === null) {
+      log(
+        "INFO",
+        `Reconnect: no valid pit temp; keeping command setpoint ${this.command.setPoint}°F.`,
+      );
+    }
+
+    this.pendingExplicitSetpoint = false;
   }
 
   private evaluateAutomation(now: number) {
@@ -268,6 +319,7 @@ export class GrillRuntime {
 
   setSetpoint(temp: number): GrillCommand {
     this.command.setPoint = clampSetpoint(temp);
+    this.pendingExplicitSetpoint = true;
     return this.command;
   }
 
@@ -327,8 +379,7 @@ export class GrillRuntime {
     return getHistory(sessionId ?? getActiveSession()?.id ?? null);
   }
 
-  getStatus(): StatusResponse {
-    const now = Date.now();
+  getStatus(now = Date.now()): StatusResponse {
     const isOnline = computeOnline(this.lastSeenEpoch, now);
     const automation: AutomationStatus = {
       active: this.automation.active,
