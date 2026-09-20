@@ -8,7 +8,6 @@ import { CooldownControls } from "./cooldown-controls";
 import { PitHero } from "./pit-hero";
 import { ProbeCards } from "./probe-cards";
 import { RecipeRunner } from "./recipe-runner";
-import { SetpointControls } from "./setpoint-controls";
 import { StatusPills } from "./status-pills";
 import { TelemetryChart } from "./telemetry-chart";
 
@@ -59,10 +58,7 @@ export function Dashboard({
         )}
       </div>
       <RecipeRunner status={status} onChange={refresh} />
-      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-        <PitHero status={status} />
-        <SetpointControls status={status} />
-      </div>
+      <PitHero status={status} />
       <ProbeCards status={status} />
       <TelemetryChart sessionId={status?.active_session?.id ?? null} initialHistory={initialHistory} />
       <CooldownControls status={status} />

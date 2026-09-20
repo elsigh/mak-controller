@@ -1,9 +1,31 @@
 "use client";
 
-import type { StatusResponse } from "@makgrill/shared";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDownIcon } from "lucide-react";
+import {
+  SETPOINT_MAX,
+  SETPOINT_MIN,
+  SETPOINT_STEP,
+  clampSetpoint,
+  type StatusResponse,
+} from "@makgrill/shared";
+import { setPowerAction, setSetpointAction } from "@/app/actions";
+import { Button } from "@/components/ui/button";
 import { CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
+import { compactTempClass, fieldClass, touchBtnClass } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { Panel } from "./panel";
+
+const PRESETS = [180, 200, 225, 250, 275, 300, 350];
+
+function commitSetpoint(temp: number) {
+  const fd = new FormData();
+  fd.set("temp", String(clampSetpoint(temp)));
+  return setSetpointAction(fd);
+}
 
 function Gauge({ current, target }: { current: number | null; target: number }) {
   const min = 100;
@@ -59,6 +81,146 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
   );
 }
 
+function EditableSetpoint({ current, locked }: { current: number; locked: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(String(current));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(String(current));
+  }, [current, editing]);
+
+  useEffect(() => {
+    if (!editing) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [editing]);
+
+  function apply(temp: number) {
+    if (!activeRef.current) return;
+    activeRef.current = false;
+    const next = clampSetpoint(temp);
+    setDraft(String(next));
+    if (next !== current) void commitSetpoint(next);
+    setOpen(false);
+    setEditing(false);
+  }
+
+  function applyDraft() {
+    if (!activeRef.current) return;
+    const parsed = Number(draft);
+    if (!Number.isFinite(parsed)) {
+      activeRef.current = false;
+      setDraft(String(current));
+      setOpen(false);
+      setEditing(false);
+      return;
+    }
+    apply(parsed);
+  }
+
+  function cancel() {
+    activeRef.current = false;
+    setDraft(String(current));
+    setOpen(false);
+    setEditing(false);
+  }
+
+  function startEditing() {
+    if (locked) return;
+    activeRef.current = true;
+    setDraft(String(current));
+    setEditing(true);
+    setOpen(true);
+  }
+
+  return (
+    <div ref={rootRef} className="mt-2 flex h-12 min-h-12 items-center justify-end">
+      {editing ? (
+        <Popover
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (!next) applyDraft();
+          }}
+        >
+          <PopoverAnchor asChild>
+            <div className="flex w-fit items-center">
+              <Input
+                ref={inputRef}
+                type="number"
+                inputMode="numeric"
+                min={SETPOINT_MIN}
+                max={SETPOINT_MAX}
+                step={SETPOINT_STEP}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyDraft();
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancel();
+                  }
+                }}
+                className={cn(fieldClass, compactTempClass, "rounded-r-none")}
+                aria-label="Setpoint °F"
+              />
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-label="Setpoint presets"
+                  className="h-11 w-10 rounded-l-none border-l-0 px-0"
+                >
+                  <ChevronDownIcon />
+                </Button>
+              </PopoverTrigger>
+            </div>
+          </PopoverAnchor>
+          <PopoverContent
+            align="end"
+            className="w-32 p-1"
+            onOpenAutoFocus={(e: Event) => e.preventDefault()}
+            onPointerDownOutside={(e) => {
+              if (rootRef.current?.contains(e.target as Node)) e.preventDefault();
+            }}
+          >
+            {PRESETS.map((temp) => (
+              <button
+                key={temp}
+                type="button"
+                className={cn(
+                  "flex w-full items-center rounded-md px-2 py-1.5 font-mono text-sm tabular-nums outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
+                  temp === current && "bg-accent text-accent-foreground",
+                )}
+                onClick={() => apply(temp)}
+              >
+                {temp}°
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <button
+          type="button"
+          disabled={locked}
+          onClick={startEditing}
+          className="font-mono text-4xl leading-none text-primary tabular-nums disabled:cursor-default"
+          aria-label="Edit setpoint"
+        >
+          {current}°
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PitHero({ status }: { status: StatusResponse | null }) {
   const ready = status !== null;
   const online = status?.is_online ?? false;
@@ -66,6 +228,8 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
   const target = status?.command.setPoint ?? 175;
   const delta = pit !== null && Number.isFinite(pit) ? pit - target : null;
   const pitLabel = pit !== null && Number.isFinite(pit) ? Math.round(pit) : "--";
+  const locked = !online || Boolean(status?.is_cooldown) || status?.state.power.toUpperCase() !== "ON";
+  const showTurnOn = ready && status.state.power.toUpperCase() !== "ON" && !status.is_cooldown;
 
   return (
     <Panel className="ember-ring min-h-[22.5rem]">
@@ -83,9 +247,19 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
             )}
           </div>
           <div className="text-right">
-            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Setpoint</p>
+            <div className={cn("flex items-center justify-end gap-2", showTurnOn && "min-h-11")}>
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Setpoint</p>
+              {showTurnOn ? (
+                <form action={setPowerAction}>
+                  <input type="hidden" name="state" value={1} />
+                  <Button type="submit" disabled={!online} className={touchBtnClass}>
+                    Turn on
+                  </Button>
+                </form>
+              ) : null}
+            </div>
             {ready ? (
-              <p className="mt-2 h-12 font-mono text-4xl leading-none text-primary tabular-nums">{target}°</p>
+              <EditableSetpoint current={target} locked={locked} />
             ) : (
               <Skeleton className="mt-2 ml-auto h-12 w-20" />
             )}
