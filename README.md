@@ -24,8 +24,7 @@ Do **not** point the grill at Vercel or any serverless endpoint. The grill needs
 - Danger tokens in `GrillFlags`/`Power` (`FIRE`, `FLAMEOUT`, `TIMEOUT`, …) force `power=0` and urgent ntfy
 - After a ≥30s gap, an `OFF` report is not answered with `power=1` unless the user turns power on
 - Setpoint control 150–500°F in 5° steps; shutdown that respects Pellet Boss cooldown
-- Multi-stage recipes (time, probe ≥/≤, hold)
-- Cook sessions with CSV export
+- Day-grouped cook history (Studio local date, `America/Los_Angeles`) with full-day CSV export
 - Optional [ntfy](https://ntfy.sh/) push (probe done, ATSET, stage advance, flameout, silence, danger)
 - Shared-secret dashboard auth (the grill path stays unauthenticated, as upstream)
 - Installable home-screen app on iPhone (Safari Add to Home Screen)
@@ -86,6 +85,14 @@ Local HTTP is fine on the home LAN. iOS does not require HTTPS for this. If you 
 ### Remote UI via Tailscale
 
 Leave the grill on the LAN DNS path. For phones / laptops away from home, join the Studio via Tailscale and open `http://<tailscale-ip>/` (or `:3000`). Do not expose port 80 to the public internet.
+
+## History
+
+History is grouped by **local calendar day**, not named cook sessions. Telemetry timestamps are written in the box timezone (`TIMEZONE=America/Los_Angeles` in Docker). `GET /internal/days` lists distinct dates with data; `GET /internal/history?day=YYYY-MM-DD` returns that day's pit / setpoint / probe series.
+
+A full day at ~4s polls is ~20k points. Chart responses downsample to **1 point / 20 seconds** (~4.3k points) and always keep the last sample. `GET /internal/history/export?day=YYYY-MM-DD` (and the History **Download CSV** button) export the native-resolution series. Pass `dense=1` on the JSON endpoint for the same full series.
+
+Unnamed telemetry (`session_id` null) is retained for **at least 14 days** so yesterday stays visible. Named-session start/stop still exists on the bridge API but is not the History UI. Recipes remain on `/internal/recipes` but are hidden from the product nav.
 
 ## Protocol
 

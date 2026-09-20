@@ -30,25 +30,38 @@ function toRows(history: HistoryResponse) {
   }));
 }
 
+function sampleLabel(history: HistoryResponse | null, rows: number) {
+  if (!history) return `${rows.toLocaleString()} samples`;
+  const raw = history.sample_count ?? rows;
+  if (history.downsample_seconds && raw > rows) {
+    return `${rows.toLocaleString()} of ${raw.toLocaleString()} samples · ${history.downsample_seconds}s display`;
+  }
+  return `${rows.toLocaleString()} samples`;
+}
+
 export function TelemetryChart({
   sessionId,
+  day,
   initialHistory = null,
 }: {
   sessionId?: number | null;
+  day?: string | null;
   initialHistory?: HistoryResponse | null;
 }) {
   const [rows, setRows] = useState<ReturnType<typeof toRows>>(() =>
     initialHistory ? toRows(initialHistory) : [],
   );
+  const [meta, setMeta] = useState<HistoryResponse | null>(initialHistory);
   const [ready, setReady] = useState(Boolean(initialHistory));
 
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
-        const history = await api.history(sessionId);
+        const history = await api.history(day ? { day } : sessionId);
         if (alive) {
           setRows(toRows(history));
+          setMeta(history);
           setReady(true);
         }
       } catch {
@@ -61,13 +74,13 @@ export function TelemetryChart({
       alive = false;
       window.clearInterval(id);
     };
-  }, [sessionId]);
+  }, [sessionId, day]);
 
   return (
     <Panel>
       <CardHeader className="flex-row items-center justify-between">
         <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Cook curve</p>
-        <p className="h-4 text-xs text-muted-foreground">{ready ? `${rows.length} samples` : " "}</p>
+        <p className="h-4 text-xs text-muted-foreground">{ready ? sampleLabel(meta, rows.length) : " "}</p>
       </CardHeader>
       <CardContent>
         <div className="relative h-80 min-h-80 w-full overflow-hidden">

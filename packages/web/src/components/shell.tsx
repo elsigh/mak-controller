@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 
 const LINKS = [
   { href: "/", label: "Pit" },
-  { href: "/recipes", label: "Recipes" },
   { href: "/history", label: "History" },
   { href: "/settings", label: "Settings" },
 ];

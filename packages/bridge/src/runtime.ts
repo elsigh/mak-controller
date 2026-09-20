@@ -11,6 +11,8 @@ import {
   computeOnline,
   containsDangerToken,
   encodeGrillResponse,
+  formatLocalStamp,
+  HISTORY_CHART_DOWNSAMPLE_SECONDS,
   isSustainedSilence,
   parseNumber,
   shouldAdoptPitSetpoint,
@@ -32,6 +34,7 @@ import { log } from "./config.ts";
 import {
   getActiveSession,
   getHistory,
+  getHistoryByDay,
   insertFlagEvent,
   insertTelemetry,
   startSession,
@@ -194,8 +197,7 @@ export class GrillRuntime {
   }
 
   private nowStamp(now = new Date()) {
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    return formatLocalStamp(now);
   }
 
   handleGrillPost(form: Record<string, string>, now = Date.now()): string {
@@ -551,8 +553,14 @@ export class GrillRuntime {
     stopActiveSession(this.nowStamp());
   }
 
-  history(sessionId?: number | null) {
-    return getHistory(sessionId ?? getActiveSession()?.id ?? null);
+  history(query?: number | null | { sessionId?: number | null; day?: string; dense?: boolean }) {
+    if (query && typeof query === "object") {
+      if (query.day) {
+        return getHistoryByDay(query.day, query.dense ? 0 : HISTORY_CHART_DOWNSAMPLE_SECONDS);
+      }
+      return getHistory(query.sessionId ?? getActiveSession()?.id ?? null);
+    }
+    return getHistory(query ?? getActiveSession()?.id ?? null);
   }
 
   getStatus(now = Date.now()): StatusResponse {

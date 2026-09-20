@@ -1,4 +1,4 @@
-import type { HistoryResponse, Recipe, RecipeStage, StatusResponse } from "@makgrill/shared";
+import type { HistoryDay, HistoryResponse, Recipe, RecipeStage, StatusResponse } from "@makgrill/shared";
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -19,8 +19,18 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: () => json<StatusResponse>("/api/status"),
-  history: (sessionId?: number | null) =>
-    json<HistoryResponse>(sessionId ? `/api/history?sessionId=${sessionId}` : "/api/history"),
+  history: (query?: number | null | { sessionId?: number | null; day?: string | null; dense?: boolean }) => {
+    if (query && typeof query === "object") {
+      const params = new URLSearchParams();
+      if (query.day) params.set("day", query.day);
+      else if (query.sessionId) params.set("sessionId", String(query.sessionId));
+      if (query.dense) params.set("dense", "1");
+      const search = params.toString();
+      return json<HistoryResponse>(search ? `/api/history?${search}` : "/api/history");
+    }
+    return json<HistoryResponse>(query ? `/api/history?sessionId=${query}` : "/api/history");
+  },
+  days: () => json<HistoryDay[]>("/api/days"),
   setSetpoint: (temp: number) => json("/api/setpoint", { method: "POST", body: JSON.stringify({ temp }) }),
   setPower: (state: 0 | 1) => json("/api/power", { method: "POST", body: JSON.stringify({ state }) }),
   setProbeTarget: (probe: string, target: number | null) =>

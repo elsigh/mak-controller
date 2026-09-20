@@ -1,8 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { DEFAULT_RECIPES } from "@makgrill/shared";
-import type { CookSession, FlagEvent, HistoryResponse, Recipe, RecipeStage } from "@makgrill/shared";
+import {
+  DEFAULT_RECIPES,
+  HISTORY_CHART_DOWNSAMPLE_SECONDS,
+  VOLATILE_RETENTION_DAYS,
+  downsampleByTime,
+  formatLocalStamp,
+  isValidHistoryDay,
+  nextCalendarDay,
+} from "@makgrill/shared";
+import type { CookSession, FlagEvent, HistoryDay, HistoryResponse, Recipe, RecipeStage } from "@makgrill/shared";
 import { config, log } from "./config.ts";
 
 let db: Database.Database | null = null;
@@ -58,6 +66,8 @@ export function initDb(seedNtfyTopic = ""): string {
       name TEXT NOT NULL,
       stages_json TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON telemetry(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_telemetry_session_id ON telemetry(session_id);
   `);
 
   const existingTopic = conn.prepare("SELECT value FROM settings WHERE key = 'ntfy_topic'").get() as
@@ -160,6 +170,35 @@ export function stopActiveSession(now: string): void {
   getDb().prepare("UPDATE sessions SET active = 0, ended_at = ? WHERE active = 1").run(now);
 }
 
+type HistoryRow = {
+  timestamp: string;
+  grill_temp: number | null;
+  setpoint: number | null;
+  probe1: number | null;
+  probe2: number | null;
+  probe3: number | null;
+};
+
+export type TelemetryExportRow = HistoryRow & {
+  power: string;
+  grill_flags: string;
+};
+
+function toHistoryResponse(
+  rows: HistoryRow[],
+  extras: Pick<HistoryResponse, "day" | "sample_count" | "downsample_seconds"> = {},
+): HistoryResponse {
+  return {
+    timestamps: rows.map((row) => String(row.timestamp).split(/[ T]/).at(-1) ?? String(row.timestamp)),
+    grill_temp: rows.map((row) => row.grill_temp ?? null),
+    setpoint: rows.map((row) => row.setpoint ?? null),
+    probe1: rows.map((row) => row.probe1 ?? null),
+    probe2: rows.map((row) => row.probe2 ?? null),
+    probe3: rows.map((row) => row.probe3 ?? null),
+    ...extras,
+  };
+}
+
 export function getHistory(sessionId: number | null): HistoryResponse {
   const conn = getDb();
   const rows = sessionId
@@ -168,22 +207,58 @@ export function getHistory(sessionId: number | null): HistoryResponse {
           `SELECT timestamp, grill_temp, setpoint, probe1, probe2, probe3
            FROM telemetry WHERE session_id = ? ORDER BY id ASC`,
         )
-        .all(sessionId) as Array<Record<string, unknown>>)
+        .all(sessionId) as HistoryRow[])
     : (conn
         .prepare(
           `SELECT timestamp, grill_temp, setpoint, probe1, probe2, probe3
            FROM telemetry ORDER BY id DESC LIMIT 500`,
         )
-        .all() as Array<Record<string, unknown>>).reverse();
+        .all() as HistoryRow[]).reverse();
 
-  return {
-    timestamps: rows.map((r) => String(r.timestamp).split(" ").at(-1) ?? String(r.timestamp)),
-    grill_temp: rows.map((r) => (r.grill_temp as number | null) ?? null),
-    setpoint: rows.map((r) => (r.setpoint as number | null) ?? null),
-    probe1: rows.map((r) => (r.probe1 as number | null) ?? null),
-    probe2: rows.map((r) => (r.probe2 as number | null) ?? null),
-    probe3: rows.map((r) => (r.probe3 as number | null) ?? null),
-  };
+  return toHistoryResponse(rows, { sample_count: rows.length, downsample_seconds: null });
+}
+
+/**
+ * Day history uses Studio-local calendar dates (America/Los_Angeles / box TZ).
+ * Timestamps are stored as `YYYY-MM-DD HH:MM:SS` in that zone.
+ * Chart responses downsample to 1 point / 20s (~4.3k pts for a full day at 4s polls).
+ * Pass downsampleSeconds = 0 for native resolution (CSV / dense=1).
+ */
+export function getHistoryByDay(
+  day: string,
+  downsampleSeconds: number = HISTORY_CHART_DOWNSAMPLE_SECONDS,
+): HistoryResponse {
+  if (!isValidHistoryDay(day)) {
+    return toHistoryResponse([], { day, sample_count: 0, downsample_seconds: null });
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT timestamp, grill_temp, setpoint, probe1, probe2, probe3
+       FROM telemetry
+       WHERE timestamp >= ? AND timestamp < ?
+       ORDER BY id ASC`,
+    )
+    .all(`${day} 00:00:00`, `${nextCalendarDay(day)} 00:00:00`) as HistoryRow[];
+  const displayed = downsampleSeconds > 0 ? downsampleByTime(rows, downsampleSeconds) : rows;
+  return toHistoryResponse(displayed, {
+    day,
+    sample_count: rows.length,
+    downsample_seconds: displayed.length < rows.length ? downsampleSeconds : null,
+  });
+}
+
+export function listHistoryDays(): HistoryDay[] {
+  return getDb()
+    .prepare(
+      `SELECT substr(timestamp, 1, 10) AS day,
+              COUNT(*) AS samples,
+              MIN(timestamp) AS first_timestamp,
+              MAX(timestamp) AS last_timestamp
+       FROM telemetry
+       GROUP BY substr(timestamp, 1, 10)
+       ORDER BY day DESC`,
+    )
+    .all() as HistoryDay[];
 }
 
 export function listFlagEvents(limit = 20): FlagEvent[] {
@@ -230,22 +305,28 @@ export function exportSessionRows(sessionId: number) {
       `SELECT timestamp, grill_temp, setpoint, probe1, probe2, probe3, power, grill_flags
        FROM telemetry WHERE session_id = ? ORDER BY id ASC`,
     )
-    .all(sessionId) as Array<{
-    timestamp: string;
-    grill_temp: number | null;
-    setpoint: number | null;
-    probe1: number | null;
-    probe2: number | null;
-    probe3: number | null;
-    power: string;
-    grill_flags: string;
-  }>;
+    .all(sessionId) as TelemetryExportRow[];
+}
+
+export function exportDayRows(day: string) {
+  if (!isValidHistoryDay(day)) return [] as TelemetryExportRow[];
+  return getDb()
+    .prepare(
+      `SELECT timestamp, grill_temp, setpoint, probe1, probe2, probe3, power, grill_flags
+       FROM telemetry
+       WHERE timestamp >= ? AND timestamp < ?
+       ORDER BY id ASC`,
+    )
+    .all(`${day} 00:00:00`, `${nextCalendarDay(day)} 00:00:00`) as TelemetryExportRow[];
 }
 
 export function pruneDatabase(days: number) {
   const conn = getDb();
-  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 19).replace("T", " ");
-  const volatileCutoff = new Date(Date.now() - 24 * 3_600_000).toISOString().slice(0, 19).replace("T", " ");
+  const cutoff = formatLocalStamp(new Date(Date.now() - days * 86_400_000));
+  // Never drop unnamed day-history sooner than VOLATILE_RETENTION_DAYS, even if
+  // the maintenance button asks for a shorter session window.
+  const volatileDays = Math.max(days, VOLATILE_RETENTION_DAYS);
+  const volatileCutoff = formatLocalStamp(new Date(Date.now() - volatileDays * 86_400_000));
 
   const prunedVolatile = conn.prepare("DELETE FROM telemetry WHERE session_id IS NULL AND timestamp < ?").run(
     volatileCutoff,

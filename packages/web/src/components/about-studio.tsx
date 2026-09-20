@@ -53,7 +53,6 @@ export function AboutStudio({
   const state = status?.state;
   const command = status?.command;
   const session = status?.active_session;
-  const auto = status?.automation;
   const commit = shortSha(buildCommit) || "not set at build";
 
   return (
@@ -157,16 +156,6 @@ export function AboutStudio({
             <MetaRow
               label="Session"
               value={session ? `${session.name} · ${session.started_at}` : "None"}
-              pending={pending}
-              mono={false}
-            />
-            <MetaRow
-              label="Recipe"
-              value={
-                auto?.active
-                  ? `${auto.name} · stage ${auto.stage_idx + 1}/${auto.total_stages}`
-                  : "Idle"
-              }
               pending={pending}
               mono={false}
             />

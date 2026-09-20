@@ -1,24 +1,25 @@
 "use client";
 
-import { describePowerFailSafe, type HistoryResponse, type StatusResponse } from "@makgrill/shared";
+import { describePowerFailSafe, localCalendarDay, type HistoryResponse, type StatusResponse } from "@makgrill/shared";
 import { AlertCircleIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStatus } from "@/hooks/use-status";
 import { CooldownControls } from "./cooldown-controls";
 import { PitHero } from "./pit-hero";
 import { ProbeCards } from "./probe-cards";
-import { RecipeRunner } from "./recipe-runner";
 import { StatusPills } from "./status-pills";
 import { TelemetryChart } from "./telemetry-chart";
 
 export function Dashboard({
   initialStatus = null,
   initialHistory = null,
+  today = localCalendarDay(),
 }: {
   initialStatus?: StatusResponse | null;
   initialHistory?: HistoryResponse | null;
+  today?: string;
 }) {
-  const { status, error, refresh } = useStatus(2500, initialStatus);
+  const { status, error } = useStatus(2500, initialStatus);
 
   return (
     <div className="space-y-4">
@@ -70,10 +71,9 @@ export function Dashboard({
           </Alert>
         )}
       </div>
-      <RecipeRunner status={status} onChange={refresh} />
       <PitHero status={status} />
       <ProbeCards status={status} />
-      <TelemetryChart sessionId={status?.active_session?.id ?? null} initialHistory={initialHistory} />
+      <TelemetryChart day={today} initialHistory={initialHistory} />
       <CooldownControls status={status} />
     </div>
   );

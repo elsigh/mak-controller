@@ -1,12 +1,14 @@
 import { Hono } from "hono";
-import { clampSetpoint } from "@makgrill/shared";
+import { clampSetpoint, isValidHistoryDay } from "@makgrill/shared";
 import type { ProbeKey, RecipeStage } from "@makgrill/shared";
 import { requireBridgeSecret } from "../auth.ts";
 import {
   deleteRecipe,
+  exportDayRows,
   exportSessionRows,
   getSetting,
   listFlagEvents,
+  listHistoryDays,
   listRecipes,
   listSessions,
   pruneDatabase,
@@ -17,6 +19,37 @@ import { sendNtfy } from "../ntfy.ts";
 import type { GrillRuntime } from "../runtime.ts";
 
 const PROBES = new Set<ProbeKey>(["probe1", "probe2", "probe3"]);
+
+function csvCell(cell: unknown): string {
+  const value = cell ?? "";
+  return /[",\n]/.test(String(value)) ? `"${String(value).replaceAll('"', '""')}"` : String(value);
+}
+
+function csvAttachment(
+  c: { body: (data: string, status: 200, headers: Record<string, string>) => Response },
+  rows: Array<{
+    timestamp: string;
+    grill_temp: number | null;
+    setpoint: number | null;
+    probe1: number | null;
+    probe2: number | null;
+    probe3: number | null;
+    power: string;
+    grill_flags: string;
+  }>,
+  filename: string,
+) {
+  const header = "Timestamp,Grill Temp,SetPoint,Probe 1,Probe 2,Probe 3,Power,GrillFlags";
+  const lines = rows.map((row) =>
+    [row.timestamp, row.grill_temp, row.setpoint, row.probe1, row.probe2, row.probe3, row.power, row.grill_flags]
+      .map(csvCell)
+      .join(","),
+  );
+  return c.body([header, ...lines].join("\n"), 200, {
+    "Content-Type": "text/csv",
+    "Content-Disposition": `attachment;filename=${filename}`,
+  });
+}
 
 function asStages(value: unknown): RecipeStage[] {
   if (!Array.isArray(value)) return [];
@@ -77,9 +110,19 @@ export function internalRoutes(runtime: GrillRuntime) {
   });
 
   app.get("/history", (c) => {
+    const day = c.req.query("day");
+    if (day) {
+      if (!isValidHistoryDay(day)) {
+        return c.json({ error: "Invalid day. Use YYYY-MM-DD." }, 400);
+      }
+      const dense = c.req.query("dense") === "1" || c.req.query("dense") === "true";
+      return c.json(runtime.history({ day, dense }));
+    }
     const sessionId = Number(c.req.query("sessionId") ?? c.req.query("id") ?? "") || null;
-    return c.json(runtime.history(sessionId));
+    return c.json(runtime.history({ sessionId }));
   });
+
+  app.get("/days", (c) => c.json(listHistoryDays()));
 
   app.get("/flag-events", (c) => c.json(listFlagEvents()));
 
@@ -99,20 +142,13 @@ export function internalRoutes(runtime: GrillRuntime) {
   app.get("/session/export", (c) => {
     const sessionId = Number(c.req.query("id"));
     if (!sessionId) return c.text("Session ID required", 400);
-    const rows = exportSessionRows(sessionId);
-    const header = "Timestamp,Grill Temp,SetPoint,Probe 1,Probe 2,Probe 3,Power,GrillFlags";
-    const lines = rows.map((row) =>
-      [row.timestamp, row.grill_temp, row.setpoint, row.probe1, row.probe2, row.probe3, row.power, row.grill_flags]
-        .map((cell) => {
-          const value = cell ?? "";
-          return /[",\n]/.test(String(value)) ? `"${String(value).replaceAll('"', '""')}"` : String(value);
-        })
-        .join(","),
-    );
-    return c.body([header, ...lines].join("\n"), 200, {
-      "Content-Type": "text/csv",
-      "Content-Disposition": `attachment;filename=cook_session_${sessionId}.csv`,
-    });
+    return csvAttachment(c, exportSessionRows(sessionId), `cook_session_${sessionId}.csv`);
+  });
+
+  app.get("/history/export", (c) => {
+    const day = c.req.query("day") ?? "";
+    if (!isValidHistoryDay(day)) return c.text("Day required as YYYY-MM-DD", 400);
+    return csvAttachment(c, exportDayRows(day), `cook_day_${day}.csv`);
   });
 
   app.get("/recipes", (c) => c.json(listRecipes()));

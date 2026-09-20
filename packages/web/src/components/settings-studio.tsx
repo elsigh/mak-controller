@@ -137,7 +137,8 @@ export function SettingsStudio({ initialStatus = null }: { initialStatus?: Statu
                 Database maintenance
               </CardTitle>
               <CardDescription>
-                Drops volatile telemetry older than 24 hours and closed cooks older than the selected window.
+                Drops closed named cooks older than the selected window. Unnamed day telemetry is
+                kept at least 14 days so yesterday stays in History.
               </CardDescription>
             </CardHeader>
             <CardContent>

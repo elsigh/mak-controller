@@ -70,6 +70,13 @@ export interface StatusResponse {
   automation: AutomationStatus;
 }
 
+export interface HistoryDay {
+  day: string;
+  samples: number;
+  first_timestamp: string;
+  last_timestamp: string;
+}
+
 export interface HistoryResponse {
   timestamps: string[];
   grill_temp: Array<number | null>;
@@ -77,6 +84,101 @@ export interface HistoryResponse {
   probe1: Array<number | null>;
   probe2: Array<number | null>;
   probe3: Array<number | null>;
+  day?: string | null;
+  sample_count?: number;
+  downsample_seconds?: number | null;
+}
+
+/** Studio / box local calendar for day-grouped history. */
+export const HISTORY_TIMEZONE = "America/Los_Angeles";
+/** Chart display cadence. CSV / dense queries stay at native ~4s poll resolution. */
+export const HISTORY_CHART_DOWNSAMPLE_SECONDS = 20;
+/** Unnamed telemetry (session_id null) is kept at least this long so yesterday stays in History. */
+export const VOLATILE_RETENTION_DAYS = 14;
+
+const HISTORY_DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export function isValidHistoryDay(day: string): boolean {
+  const match = HISTORY_DAY_RE.exec(day);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const date = Number(match[3]);
+  const utc = new Date(Date.UTC(year, month - 1, date));
+  return utc.getUTCFullYear() === year && utc.getUTCMonth() === month - 1 && utc.getUTCDate() === date;
+}
+
+export function localCalendarDay(now: Date = new Date(), timeZone = HISTORY_TIMEZONE): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+export function addCalendarDays(day: string, delta: number): string {
+  const match = HISTORY_DAY_RE.exec(day);
+  if (!match) return day;
+  const utc = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + delta));
+  return utc.toISOString().slice(0, 10);
+}
+
+export function nextCalendarDay(day: string): string {
+  return addCalendarDays(day, 1);
+}
+
+export function formatHistoryDayLabel(day: string, now: Date = new Date(), timeZone = HISTORY_TIMEZONE): string {
+  const today = localCalendarDay(now, timeZone);
+  if (day === today) return "Today";
+  if (day === addCalendarDays(today, -1)) return "Yesterday";
+  const match = HISTORY_DAY_RE.exec(day);
+  if (!match) return day;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** Local wall-clock stamp matching telemetry rows: `YYYY-MM-DD HH:MM:SS`. */
+export function formatLocalStamp(now: Date = new Date(), timeZone = HISTORY_TIMEZONE): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "00";
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")} ${hour}:${get("minute")}:${get("second")}`;
+}
+
+export function timeOfDaySeconds(stamp: string): number {
+  const time = String(stamp).split(/[ T]/)[1] ?? "00:00:00";
+  const [hours = 0, minutes = 0, seconds = 0] = time.split(":").map(Number);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+/** Keep the first row in each time bucket, plus the last sample. */
+export function downsampleByTime<T extends { timestamp: string }>(rows: T[], intervalSeconds: number): T[] {
+  if (intervalSeconds <= 0 || rows.length <= 2) return rows;
+  const kept: T[] = [];
+  let bucket = Number.NEGATIVE_INFINITY;
+  for (const row of rows) {
+    const nextBucket = Math.floor(timeOfDaySeconds(row.timestamp) / intervalSeconds);
+    if (nextBucket !== bucket) {
+      kept.push(row);
+      bucket = nextBucket;
+    }
+  }
+  const last = rows[rows.length - 1];
+  if (kept[kept.length - 1] !== last) kept.push(last);
+  return kept;
 }
 
 export interface FlagEvent {

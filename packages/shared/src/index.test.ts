@@ -1,19 +1,26 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  addCalendarDays,
   clampSetpoint,
   computeCooldown,
   computeOnline,
   containsDangerToken,
+  downsampleByTime,
   encodeGrillResponse,
+  formatHistoryDayLabel,
+  formatLocalStamp,
   isSustainedSilence,
+  isValidHistoryDay,
   isValidSetpoint,
+  localCalendarDay,
   shouldAdoptPitSetpoint,
   shouldHoldPowerOffAfterGap,
   shouldResetCommandedPower,
   shouldWatchSilence,
   unknownGrillPostKeys,
   DEFAULT_COMMAND,
+  HISTORY_TIMEZONE,
   SILENCE_THRESHOLD_MS,
 } from "./index.ts";
 
@@ -195,5 +202,38 @@ describe("silence and danger fail-safes", () => {
   it("returns unknown POST keys once", () => {
     assert.deepEqual(unknownGrillPostKeys({ GrillId: "1", Temp: "200", RSSI: "-40" }), ["RSSI"]);
     assert.deepEqual(unknownGrillPostKeys({ GrillId: "1", RSSI: "-40" }, ["RSSI"]), []);
+  });
+});
+
+describe("day history helpers", () => {
+  it("validates calendar days", () => {
+    assert.equal(isValidHistoryDay("2026-09-20"), true);
+    assert.equal(isValidHistoryDay("2026-02-29"), false);
+    assert.equal(isValidHistoryDay("2024-02-29"), true);
+    assert.equal(isValidHistoryDay("09-20-2026"), false);
+  });
+
+  it("formats Studio-local stamps in America/Los_Angeles", () => {
+    const pdt = formatLocalStamp(new Date("2026-09-21T06:30:00.000Z"), HISTORY_TIMEZONE);
+    assert.equal(pdt, "2026-09-20 23:30:00");
+    assert.equal(localCalendarDay(new Date("2026-09-21T06:30:00.000Z")), "2026-09-20");
+    assert.equal(addCalendarDays("2026-09-20", 1), "2026-09-21");
+  });
+
+  it("labels today and yesterday relative to the box timezone", () => {
+    const now = new Date("2026-09-21T06:30:00.000Z");
+    assert.equal(formatHistoryDayLabel("2026-09-20", now), "Today");
+    assert.equal(formatHistoryDayLabel("2026-09-19", now), "Yesterday");
+    assert.match(formatHistoryDayLabel("2026-09-18", now), /Sep 18/);
+  });
+
+  it("downsamples to the first point in each bucket plus the last sample", () => {
+    const rows = [0, 4, 8, 12, 16, 20, 24].map((second) => ({
+      timestamp: `2026-09-20 10:00:${String(second).padStart(2, "0")}`,
+    }));
+    assert.deepEqual(
+      downsampleByTime(rows, 20).map((row) => row.timestamp),
+      ["2026-09-20 10:00:00", "2026-09-20 10:00:20", "2026-09-20 10:00:24"],
+    );
   });
 });
