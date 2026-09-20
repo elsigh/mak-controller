@@ -2,6 +2,11 @@
 
 import { formatStageRule, type StatusResponse } from "@makgrill/shared";
 import { api } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { touchBtnClass } from "@/lib/ui";
+import { Panel } from "./panel";
 
 export function RecipeRunner({
   status,
@@ -16,41 +21,43 @@ export function RecipeRunner({
   const seconds = Math.floor(auto.stage_elapsed_sec % 60);
 
   return (
-    <section className="panel rounded-3xl border-amber-400/30 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <Panel className="border-primary/30">
+      <CardHeader className="flex-row items-center justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-amber-300">Recipe running</p>
-          <p className="mt-1 text-xl font-semibold">{auto.name}</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-primary">Recipe running</p>
+          <CardTitle className="mt-1 text-xl">{auto.name}</CardTitle>
         </div>
-        <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs uppercase tracking-[0.16em] text-emerald-200">
+        <Badge
+          variant="outline"
+          className="h-8 rounded-full border-emerald-400/30 bg-emerald-500/15 px-3 text-[11px] uppercase tracking-[0.16em] text-emerald-200"
+        >
           Stage {auto.stage_idx + 1} / {auto.total_stages}
-        </span>
-      </div>
-      <div className="mt-4 rounded-2xl bg-black/25 p-4">
-        <p className="font-medium">{auto.current_stage.name}</p>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          {auto.current_stage.setpoint}°F · {formatStageRule(auto.current_stage)}
-        </p>
-        <p className="mt-2 font-mono text-sm text-amber-200">
-          Elapsed {minutes}m {seconds}s
-        </p>
-      </div>
-      <div className="mt-4 flex gap-2">
-        <button
-          type="button"
-          onClick={() => void api.nextStage().then(onChange)}
-          className="rounded-2xl border border-[var(--line)] px-4 py-2"
-        >
-          Skip stage
-        </button>
-        <button
-          type="button"
-          onClick={() => void api.stopAutomation().then(onChange)}
-          className="rounded-2xl bg-red-600 px-4 py-2"
-        >
-          Cancel recipe
-        </button>
-      </div>
-    </section>
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-2xl bg-black/25 p-4">
+          <p className="font-medium">{auto.current_stage.name}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {auto.current_stage.setpoint}°F · {formatStageRule(auto.current_stage)}
+          </p>
+          <p className="mt-2 font-mono text-sm text-primary">
+            Elapsed {minutes}m {seconds}s
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" className={touchBtnClass} onClick={() => void api.nextStage().then(onChange)}>
+            Skip stage
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            className={touchBtnClass}
+            onClick={() => void api.stopAutomation().then(onChange)}
+          >
+            Cancel recipe
+          </Button>
+        </div>
+      </CardContent>
+    </Panel>
   );
 }

@@ -1,7 +1,10 @@
 "use client";
 
 import type { HistoryResponse, StatusResponse } from "@makgrill/shared";
+import { AlertCircleIcon } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStatus } from "@/hooks/use-status";
+import { PageHeader } from "./page-header";
 import { PitHero } from "./pit-hero";
 import { ProbeCards } from "./probe-cards";
 import { RecipeRunner } from "./recipe-runner";
@@ -21,30 +24,40 @@ export function Dashboard({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Live pit</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Grill {status?.state.grill_id ?? "—"} · last poll {status?.state.last_seen ?? "waiting"}
-          </p>
-        </div>
+      <div className="flex min-h-16 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <PageHeader
+          title="Live pit"
+          description={`Grill ${status?.state.grill_id ?? "—"} · last poll ${status?.state.last_seen ?? "waiting"}`}
+          truncate
+        />
         <StatusPills status={status} />
       </div>
-      {error && (
-        <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-          {error}
-        </div>
-      )}
-      {status && !status.is_online && (
-        <div className="rounded-2xl border border-red-500/30 bg-red-950/40 px-4 py-3 text-sm">
-          Connection lost — the grill must POST to <code>/GrillService/Service</code> at least every 15 seconds.
-        </div>
-      )}
-      {status?.flameout_alert && (
-        <div className="rounded-2xl bg-orange-500 px-4 py-3 text-sm font-semibold text-black">
-          Flameout detected — pit dropped more than 35°F below setpoint for 8+ minutes.
-        </div>
-      )}
+      <div className="min-h-0 space-y-3">
+        {error && (
+          <Alert variant="destructive" className="rounded-2xl px-4 py-3">
+            <AlertCircleIcon />
+            <AlertTitle>Bridge error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {status && !status.is_online && (
+          <Alert variant="destructive" className="rounded-2xl px-4 py-3">
+            <AlertCircleIcon />
+            <AlertTitle>Connection lost</AlertTitle>
+            <AlertDescription>
+              The grill must POST to <code>/GrillService/Service</code> at least every 15 seconds.
+            </AlertDescription>
+          </Alert>
+        )}
+        {status?.flameout_alert && (
+          <Alert className="rounded-2xl border-transparent bg-orange-500 px-4 py-3 text-black">
+            <AlertTitle className="text-black">Flameout detected</AlertTitle>
+            <AlertDescription className="text-black/80">
+              Pit dropped more than 35°F below setpoint for 8+ minutes.
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
       <RecipeRunner status={status} onChange={refresh} />
       <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <PitHero status={status} />

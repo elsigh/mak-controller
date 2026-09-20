@@ -1,7 +1,9 @@
 "use client";
 
 import type { StatusResponse } from "@makgrill/shared";
-import { cn } from "@/lib/cn";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 export function StatusPills({ status }: { status: StatusResponse | null }) {
   const online = status?.is_online ?? false;
@@ -21,32 +23,43 @@ export function StatusPills({ status }: { status: StatusResponse | null }) {
           : power;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span
-        className={cn(
-          "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]",
-          !online && "border-red-500/40 bg-red-500/10 text-red-200",
-          online && cooldown && "border-orange-400/40 bg-orange-500/10 text-orange-200",
-          online && !cooldown && "border-emerald-400/30 bg-emerald-500/10 text-emerald-200",
-        )}
-      >
-        <span
+    <div className="flex h-8 min-w-28 items-center justify-end gap-2">
+      {!status ? (
+        <Skeleton className="h-8 w-28 rounded-full" />
+      ) : (
+        <Badge
+          variant="outline"
           className={cn(
-            "live-dot h-2 w-2 rounded-full",
-            !online ? "bg-red-400" : cooldown ? "bg-orange-400" : "bg-emerald-400",
+            "h-8 min-w-28 justify-center gap-2 rounded-full px-3 text-[11px] font-semibold uppercase tracking-[0.16em]",
+            !online && "border-red-500/40 bg-red-500/10 text-red-200",
+            online && cooldown && "border-orange-400/40 bg-orange-500/10 text-orange-200",
+            online && !cooldown && "border-emerald-400/30 bg-emerald-500/10 text-emerald-200",
           )}
-        />
-        {label}
-      </span>
+        >
+          <span
+            className={cn(
+              "live-dot size-2 rounded-full",
+              !online ? "bg-red-400" : cooldown ? "bg-orange-400" : "bg-emerald-400",
+            )}
+          />
+          {label}
+        </Badge>
+      )}
       {atSet && (
-        <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs uppercase tracking-[0.16em] text-amber-200">
+        <Badge
+          variant="outline"
+          className="h-8 rounded-full border-amber-400/30 bg-amber-400/10 px-3 text-[11px] uppercase tracking-[0.16em] text-amber-200"
+        >
           At setpoint
-        </span>
+        </Badge>
       )}
       {flameout && (
-        <span className="rounded-full border border-red-400/40 bg-red-500/15 px-3 py-1 text-xs uppercase tracking-[0.16em] text-red-100">
+        <Badge
+          variant="outline"
+          className="h-8 rounded-full border-red-400/40 bg-red-500/15 px-3 text-[11px] uppercase tracking-[0.16em] text-red-100"
+        >
           Flameout
-        </span>
+        </Badge>
       )}
     </div>
   );

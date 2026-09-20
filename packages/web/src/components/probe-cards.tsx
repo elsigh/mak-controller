@@ -2,8 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import type { ProbeKey, StatusResponse } from "@makgrill/shared";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/cn";
+import { fieldClass } from "@/lib/ui";
+import { cn } from "@/lib/utils";
+import { Panel } from "./panel";
 
 const PROBES: Array<{ key: ProbeKey; label: string; color: string }> = [
   { key: "probe1", label: "Probe 1", color: "var(--probe-1)" },
@@ -50,27 +56,35 @@ export function ProbeCards({ status }: { status: StatusResponse | null }) {
         const target = status?.probe_targets[probe.key];
         const alerting = Boolean(status?.probe_alerts[probe.key]);
         return (
-          <div key={probe.key} className={cn("panel rounded-3xl p-5", alerting && "probe-alert")}>
-            <p className="text-xs uppercase tracking-[0.2em]" style={{ color: probe.color }}>
-              {probe.label}
-            </p>
-            <p className="mt-2 font-mono text-3xl">{value}</p>
-            <label className="mt-4 block text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">
-              Target °F
-              <input
-                type="number"
-                min={100}
-                max={220}
-                defaultValue={target ?? ""}
-                key={`${probe.key}-${target ?? "none"}`}
-                onBlur={(e) => {
-                  const next = e.target.value ? Number(e.target.value) : null;
-                  void api.setProbeTarget(probe.key, next);
-                }}
-                className="mt-2 w-full rounded-xl border border-[var(--line)] bg-black/30 px-3 py-2 font-mono outline-none focus:border-amber-400"
-              />
-            </label>
-          </div>
+          <Panel key={probe.key} className={cn("min-h-[12.5rem]", alerting && "probe-alert")}>
+            <CardHeader>
+              <CardTitle className="text-xs font-normal uppercase tracking-[0.2em]" style={{ color: probe.color }}>
+                {probe.label}
+              </CardTitle>
+              {status ? (
+                <p className="h-9 font-mono text-3xl leading-none tabular-nums">{value}</p>
+              ) : (
+                <Skeleton className="h-9 w-28" />
+              )}
+            </CardHeader>
+            <CardContent>
+              <Label className="flex-col items-start gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Target °F
+                <Input
+                  type="number"
+                  min={100}
+                  max={220}
+                  defaultValue={target ?? ""}
+                  key={`${probe.key}-${target ?? "none"}`}
+                  onBlur={(e) => {
+                    const next = e.target.value ? Number(e.target.value) : null;
+                    void api.setProbeTarget(probe.key, next);
+                  }}
+                  className={`${fieldClass} font-mono normal-case tracking-normal`}
+                />
+              </Label>
+            </CardContent>
+          </Panel>
         );
       })}
     </section>

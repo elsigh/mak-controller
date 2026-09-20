@@ -1,6 +1,9 @@
 "use client";
 
 import type { StatusResponse } from "@makgrill/shared";
+import { CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Panel } from "./panel";
 
 function Gauge({ current, target }: { current: number | null; target: number }) {
   const min = 100;
@@ -50,30 +53,46 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
 }
 
 export function PitHero({ status }: { status: StatusResponse | null }) {
+  const ready = status !== null;
   const online = status?.is_online ?? false;
   const pit = online ? Number(status?.state.temp) : null;
   const target = status?.command.setPoint ?? 175;
   const delta = pit !== null && Number.isFinite(pit) ? pit - target : null;
+  const pitLabel = pit !== null && Number.isFinite(pit) ? Math.round(pit) : "--";
 
   return (
-    <section className="panel ember-ring rounded-3xl p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted)]">Pit temperature</p>
-          <p className="mt-2 font-mono text-6xl font-semibold tracking-tight sm:text-7xl">
-            {pit !== null && Number.isFinite(pit) ? Math.round(pit) : "--"}
-            <span className="ml-1 text-2xl text-amber-400">°F</span>
-          </p>
+    <Panel className="ember-ring min-h-[22.5rem]">
+      <CardHeader className="gap-0">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Pit temperature</p>
+            {ready ? (
+              <p className="mt-2 h-16 font-mono text-6xl leading-none font-semibold tracking-tight tabular-nums sm:h-[4.5rem] sm:text-7xl">
+                {pitLabel}
+                <span className="ml-1 text-2xl text-primary">°F</span>
+              </p>
+            ) : (
+              <Skeleton className="mt-2 h-16 w-44 sm:h-[4.5rem]" />
+            )}
+          </div>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Commanded</p>
+            {ready ? (
+              <p className="mt-2 h-12 font-mono text-4xl leading-none text-primary tabular-nums">{target}°</p>
+            ) : (
+              <Skeleton className="mt-2 ml-auto h-12 w-20" />
+            )}
+            <p className="mt-1 h-5 text-sm text-muted-foreground">
+              {delta === null ? "Awaiting grill" : `${delta > 0 ? "+" : ""}${Math.round(delta)}° vs target`}
+            </p>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted)]">Commanded</p>
-          <p className="mt-2 font-mono text-4xl text-amber-400">{target}°</p>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            {delta === null ? "Awaiting grill" : `${delta > 0 ? "+" : ""}${Math.round(delta)}° vs target`}
-          </p>
+      </CardHeader>
+      <CardContent>
+        <div className="h-44">
+          <Gauge current={pit !== null && Number.isFinite(pit) ? pit : null} target={target} />
         </div>
-      </div>
-      <Gauge current={pit !== null && Number.isFinite(pit) ? pit : null} target={target} />
-    </section>
+      </CardContent>
+    </Panel>
   );
 }
