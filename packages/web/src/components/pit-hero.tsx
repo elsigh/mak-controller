@@ -216,11 +216,8 @@ function EditableSetpoint({
                   "flex w-full items-center rounded-md px-2 py-1.5 font-mono text-sm tabular-nums outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
                   temp === current && "bg-accent text-accent-foreground",
                 )}
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  apply(temp);
-                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => apply(temp)}
               >
                 {temp}°
               </button>
