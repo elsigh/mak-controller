@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { fieldClass, touchBtnClass } from "@/lib/ui";
 import { Panel } from "./panel";
 
-const PRESETS = [200, 225, 250, 275, 300, 350];
+const PRESETS = [180, 200, 225, 250, 275, 300, 350];
 
 export function SetpointControls({ status }: { status: StatusResponse | null }) {
   const locked = !status?.is_online || status.is_cooldown || status.state.power.toUpperCase() !== "ON";
@@ -25,21 +25,16 @@ export function SetpointControls({ status }: { status: StatusResponse | null }) 
             {SETPOINT_MIN}–{SETPOINT_MAX}°F, {SETPOINT_STEP}° steps
           </CardDescription>
         </div>
-        <form action={setPowerAction}>
-          <input type="hidden" name="state" value={status?.state.power.toUpperCase() === "ON" ? 0 : 1} />
-          <Button
-            type="submit"
-            disabled={!status?.is_online || status.is_cooldown}
-            className={touchBtnClass}
-            variant={status?.is_cooldown ? "secondary" : status?.state.power.toUpperCase() === "ON" ? "destructive" : "default"}
-          >
-            {status?.is_cooldown
-              ? "Cooldown locked"
-              : status?.state.power.toUpperCase() === "ON"
-                ? "Start cooldown"
-                : "Turn on"}
-          </Button>
-        </form>
+        <div className="min-h-11 min-w-24">
+          {status?.state.power.toUpperCase() !== "ON" && !status?.is_cooldown ? (
+            <form action={setPowerAction}>
+              <input type="hidden" name="state" value={1} />
+              <Button type="submit" disabled={!status?.is_online} className={touchBtnClass}>
+                Turn on
+              </Button>
+            </form>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <form action={setSetpointAction} className="flex gap-2">
@@ -58,7 +53,7 @@ export function SetpointControls({ status }: { status: StatusResponse | null }) 
             Set
           </Button>
         </form>
-        <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           <form action={setSetpointAction}>
             <input type="hidden" name="temp" value={current - 5} />
             <Button type="submit" disabled={locked} variant="outline" className={`w-full ${touchBtnClass}`}>

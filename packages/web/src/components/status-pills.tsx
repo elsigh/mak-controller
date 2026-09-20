@@ -23,7 +23,7 @@ export function StatusPills({ status }: { status: StatusResponse | null }) {
           : power;
 
   return (
-    <div className="flex h-8 min-w-28 items-center justify-end gap-2">
+    <div className="flex h-8 shrink-0 items-center justify-end gap-2">
       {!status ? (
         <Skeleton className="h-8 w-28 rounded-full" />
       ) : (

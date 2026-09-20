@@ -16,6 +16,7 @@ async function post(path: string, body: unknown) {
   revalidatePath("/history");
   revalidatePath("/recipes");
   revalidatePath("/settings");
+  revalidatePath("/about");
 }
 
 export async function setSetpointAction(formData: FormData) {

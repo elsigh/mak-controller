@@ -2,14 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOutIcon, MenuIcon } from "lucide-react";
+import { MenuIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -28,6 +22,8 @@ const LINKS = [
   { href: "/history", label: "History" },
   { href: "/settings", label: "Settings" },
 ];
+
+const MENU_LINKS = [...LINKS, { href: "/about", label: "About" }];
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -72,60 +68,54 @@ export function Shell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="flex items-center gap-1">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon-lg" className="min-h-11 min-w-11 md:hidden" aria-label="Open menu">
-                <MenuIcon />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="bg-popover/95">
-              <SheetHeader>
-                <SheetTitle>MakGrill</SheetTitle>
-                <SheetDescription>Pellet Boss controller</SheetDescription>
-              </SheetHeader>
-              <nav className="flex flex-col gap-1 px-4">
-                {LINKS.map((link) => {
-                  const active = pathname === link.href;
-                  return (
-                    <SheetClose asChild key={link.href}>
-                      <Link
-                        href={link.href}
-                        className={cn(
-                          "rounded-2xl px-4 py-3 text-base",
-                          active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
-                        )}
-                      >
-                        {link.label}
-                      </Link>
-                    </SheetClose>
-                  );
-                })}
-              </nav>
-            </SheetContent>
-          </Sheet>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-lg" className="min-h-11 min-w-11" aria-label="Account">
-                <LogOutIcon />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => void logout()}>Sign out</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              className="size-12 min-h-12 min-w-12"
+              aria-label="Open menu"
+            >
+              <MenuIcon className="size-6" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="bg-popover/95">
+            <SheetHeader>
+              <SheetTitle>MakGrill</SheetTitle>
+              <SheetDescription>Pellet Boss controller</SheetDescription>
+            </SheetHeader>
+            <nav className="flex flex-col gap-1 px-4">
+              {MENU_LINKS.map((link) => {
+                const active = pathname === link.href;
+                return (
+                  <SheetClose asChild key={link.href}>
+                    <Link
+                      href={link.href}
+                      className={cn(
+                        "rounded-2xl px-4 py-3 text-base",
+                        active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+                      )}
+                    >
+                      {link.label}
+                    </Link>
+                  </SheetClose>
+                );
+              })}
+              <Separator className="my-2" />
+              <SheetClose asChild>
+                <button
+                  type="button"
+                  onClick={() => void logout()}
+                  className="rounded-2xl px-4 py-3 text-left text-base text-muted-foreground hover:bg-muted"
+                >
+                  Sign out
+                </button>
+              </SheetClose>
+            </nav>
+          </SheetContent>
+        </Sheet>
       </header>
       <main className="flex-1 pb-10">{children}</main>
-      <Separator className="mb-4" />
-      <footer className="pb-2 text-center text-xs text-muted-foreground">
-        Unofficial community controller. Derived from{" "}
-        <a className="underline decoration-amber-700/60" href="https://github.com/bawilson2/mak-controller">
-          bawilson2/mak-controller
-        </a>
-        . Not affiliated with MAK Grills.
-      </footer>
     </div>
   );
 }

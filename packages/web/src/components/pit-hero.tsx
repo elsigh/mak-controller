@@ -76,7 +76,7 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
             )}
           </div>
           <div className="text-right">
-            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Commanded</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Setpoint</p>
             {ready ? (
               <p className="mt-2 h-12 font-mono text-4xl leading-none text-primary tabular-nums">{target}°</p>
             ) : (

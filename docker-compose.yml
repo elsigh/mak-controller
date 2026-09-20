@@ -24,6 +24,9 @@ services:
     build:
       context: .
       dockerfile: packages/web/Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        NEXT_PUBLIC_GIT_COMMIT: ${NEXT_PUBLIC_GIT_COMMIT:-}
     container_name: makgrill-web
     restart: unless-stopped
     ports:

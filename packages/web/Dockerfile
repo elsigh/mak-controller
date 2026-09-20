@@ -28,6 +28,10 @@ COPY packages/shared packages/shared
 COPY packages/web packages/web
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG GIT_COMMIT=
+ARG NEXT_PUBLIC_GIT_COMMIT=$GIT_COMMIT
+ENV GIT_COMMIT=$GIT_COMMIT
+ENV NEXT_PUBLIC_GIT_COMMIT=$NEXT_PUBLIC_GIT_COMMIT
 RUN npm run build -w @makgrill/web
 
 FROM node:22-bookworm-slim AS runner

@@ -31,6 +31,7 @@ import { fieldClass, touchBtnClass } from "@/lib/ui";
 import { PageHeader } from "./page-header";
 import { Panel } from "./panel";
 import { RecipeRunner } from "./recipe-runner";
+import { SessionCard } from "./session-card";
 
 const emptyStage = (index: number): RecipeStage => ({
   name: `Stage ${index + 1}`,
@@ -96,6 +97,7 @@ export function RecipeStudio({
         description="Multi-stage cooks that advance by time, probe temperature, or an indefinite hold."
       />
       <RecipeRunner status={status} onChange={refresh} />
+      <SessionCard status={status} />
       <Panel className="min-h-[12rem]">
         <CardHeader>
           <form method="get" action="/recipes" className="flex flex-col gap-2 sm:flex-row sm:items-end">

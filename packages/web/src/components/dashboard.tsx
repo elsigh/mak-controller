@@ -4,11 +4,10 @@ import type { HistoryResponse, StatusResponse } from "@makgrill/shared";
 import { AlertCircleIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStatus } from "@/hooks/use-status";
-import { PageHeader } from "./page-header";
+import { CooldownControls } from "./cooldown-controls";
 import { PitHero } from "./pit-hero";
 import { ProbeCards } from "./probe-cards";
 import { RecipeRunner } from "./recipe-runner";
-import { SessionCard } from "./session-card";
 import { SetpointControls } from "./setpoint-controls";
 import { StatusPills } from "./status-pills";
 import { TelemetryChart } from "./telemetry-chart";
@@ -24,13 +23,14 @@ export function Dashboard({
 
   return (
     <div className="space-y-4">
-      <div className="flex min-h-16 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <PageHeader
-          title="Live pit"
-          description={`Grill ${status?.state.grill_id ?? "—"} · last poll ${status?.state.last_seen ?? "waiting"}`}
-          truncate
-        />
-        <StatusPills status={status} />
+      <div className="min-h-16">
+        <h1 className="text-3xl font-semibold tracking-tight">Live pit</h1>
+        <div className="mt-1 flex h-8 min-h-8 flex-nowrap items-center justify-between gap-2">
+          <p className="min-w-0 truncate text-sm text-muted-foreground">
+            Last poll {status?.state.last_seen ?? "waiting"}
+          </p>
+          <StatusPills status={status} />
+        </div>
       </div>
       <div className="min-h-0 space-y-3">
         {error && (
@@ -65,7 +65,7 @@ export function Dashboard({
       </div>
       <ProbeCards status={status} />
       <TelemetryChart sessionId={status?.active_session?.id ?? null} initialHistory={initialHistory} />
-      <SessionCard status={status} />
+      <CooldownControls status={status} />
     </div>
   );
 }
