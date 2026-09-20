@@ -1,0 +1,15 @@
+MakGrill
+Copyright 2026 Lindsey Simon and contributors
+
+This product includes software derived from:
+
+  mak-controller
+  https://github.com/bawilson2/mak-controller
+  Licensed under the Apache License, Version 2.0
+
+The Pellet Boss GrillService protocol contract (POST /GrillService/Service,
+quoted query-string response, cooldown reset, and related telemetry fields)
+originates from that project.
+
+MakGrill is an unofficial community project and is not affiliated with,
+endorsed by, or supported by MAK Grills.

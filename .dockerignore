@@ -1,0 +1,15 @@
+.git
+.github
+.next
+**/node_modules
+**/.next
+data
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+assets
+README.md
+NOTICE
+PROTOCOL.md

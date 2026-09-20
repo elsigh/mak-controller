@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #090807;
+  --bg-elevated: #14110f;
+  --bg-card: rgba(28, 22, 18, 0.82);
+  --line: rgba(255, 214, 170, 0.12);
+  --ember: #f5a524;
+  --ember-hot: #ff6a2a;
+  --ink: #f6efe6;
+  --muted: #b3a394;
+  --probe-1: #5cc8ff;
+  --probe-2: #6ee7a8;
+  --probe-3: #d6a4ff;
+  --danger: #ff6b6b;
+  --ok: #4ade80;
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --color-ember: var(--ember);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  background:
+    radial-gradient(1200px 500px at 15% -10%, rgba(255, 122, 24, 0.16), transparent 55%),
+    radial-gradient(900px 420px at 90% 0%, rgba(245, 165, 36, 0.08), transparent 50%),
+    linear-gradient(180deg, #110d0a 0%, #090807 40%, #070605 100%);
+}
+
+* {
+  scrollbar-color: #3b2f24 transparent;
+}
+
+.panel {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
+}
+
+.ember-ring {
+  box-shadow: 0 0 0 1px rgba(245, 165, 36, 0.25), 0 0 40px rgba(255, 106, 42, 0.12);
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+.live-dot {
+  animation: pulse-live 1.6s ease-in-out infinite;
+}
+
+@keyframes probe-alert {
+  0% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.55); }
+  70% { box-shadow: 0 0 0 12px rgba(255, 107, 107, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0); }
+}
+
+.probe-alert {
+  animation: probe-alert 1.4s infinite;
+  border-color: #ff6b6b !important;
+  background: rgba(80, 18, 18, 0.45) !important;
+}

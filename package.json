@@ -1,0 +1,26 @@
+{
+  "name": "makgrill",
+  "private": true,
+  "description": "Local Pellet Boss controller: always-on grill bridge + Next.js dashboard",
+  "workspaces": [
+    "packages/shared",
+    "packages/bridge",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n bridge,web -c yellow,cyan \"npm run dev -w @makgrill/bridge\" \"npm run dev -w @makgrill/web\"",
+    "dev:bridge": "npm run dev -w @makgrill/bridge",
+    "dev:web": "npm run dev -w @makgrill/web",
+    "build": "npm run build -w @makgrill/shared && npm run build -w @makgrill/web",
+    "start": "concurrently -n bridge,web -c yellow,cyan \"npm run start -w @makgrill/bridge\" \"npm run start -w @makgrill/web\"",
+    "test": "npm run test -w @makgrill/bridge && npm run test -w @makgrill/shared",
+    "smoke": "node scripts/smoke-test.mjs",
+    "lint": "npm run lint -w @makgrill/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
