@@ -28,8 +28,7 @@ export function RecipeStudio() {
   }
 
   useEffect(() => {
-    const id = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(id);
+    void api.recipes().then(setRecipes);
   }, []);
 
   function pick(value: string) {

@@ -1,30 +1,47 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { StatusResponse } from "@makgrill/shared";
 import { api } from "@/lib/api";
 
-export function useStatus(intervalMs = 2500) {
-  const [status, setStatus] = useState<StatusResponse | null>(null);
+export function useStatus(intervalMs = 2500, initialStatus: StatusResponse | null = null) {
+  const [status, setStatus] = useState<StatusResponse | null>(initialStatus);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+
+    const tick = () => {
+      void api
+        .status()
+        .then((data) => {
+          if (cancelled) return;
+          setStatus(data);
+          setError(null);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setError(err instanceof Error ? err.message : "Lost connection to the bridge");
+        });
+    };
+
+    tick();
+    const id = window.setInterval(tick, intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [intervalMs]);
+
+  const refresh = async () => {
     try {
-      setStatus(await api.status());
+      const data = await api.status();
+      setStatus(data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lost connection to the bridge");
     }
-  }, []);
-
-  useEffect(() => {
-    const first = window.setTimeout(() => void refresh(), 0);
-    const id = window.setInterval(() => void refresh(), intervalMs);
-    return () => {
-      window.clearTimeout(first);
-      window.clearInterval(id);
-    };
-  }, [refresh, intervalMs]);
+  };
 
   return { status, error, refresh };
 }

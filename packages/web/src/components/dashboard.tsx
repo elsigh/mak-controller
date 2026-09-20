@@ -1,5 +1,6 @@
 "use client";
 
+import type { StatusResponse } from "@makgrill/shared";
 import { useStatus } from "@/hooks/use-status";
 import { PitHero } from "./pit-hero";
 import { ProbeCards } from "./probe-cards";
@@ -9,8 +10,8 @@ import { SetpointControls } from "./setpoint-controls";
 import { StatusPills } from "./status-pills";
 import { TelemetryChart } from "./telemetry-chart";
 
-export function Dashboard() {
-  const { status, error, refresh } = useStatus();
+export function Dashboard({ initialStatus = null }: { initialStatus?: StatusResponse | null }) {
+  const { status, error, refresh } = useStatus(2500, initialStatus);
 
   return (
     <div className="space-y-4">
@@ -28,7 +29,7 @@ export function Dashboard() {
           {error}
         </div>
       )}
-      {!status?.is_online && (
+      {status && !status.is_online && (
         <div className="rounded-2xl border border-red-500/30 bg-red-950/40 px-4 py-3 text-sm">
           Connection lost — the grill must POST to <code>/GrillService/Service</code> at least every 15 seconds.
         </div>
