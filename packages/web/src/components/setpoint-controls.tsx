@@ -123,7 +123,7 @@ export function SetpointControls({ status }: { status: StatusResponse | null }) 
             <PopoverContent
               align="start"
               className="w-32 p-1"
-              onOpenAutoFocus={(e) => e.preventDefault()}
+              onOpenAutoFocus={(e: Event) => e.preventDefault()}
             >
               {PRESETS.map((temp) => (
                 <button
