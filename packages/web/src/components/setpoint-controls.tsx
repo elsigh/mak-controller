@@ -69,90 +69,70 @@ export function SetpointControls({ status }: { status: StatusResponse | null }) 
         ) : null}
       </CardHeader>
       <CardContent>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={locked}
-            className={`${touchBtnClass} px-3`}
-            onClick={() => submit(current - SETPOINT_STEP)}
-          >
-            −5
-          </Button>
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverAnchor asChild>
-              <div className="flex items-center">
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={SETPOINT_MIN}
-                  max={SETPOINT_MAX}
-                  step={SETPOINT_STEP}
-                  disabled={locked}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onFocus={() => {
-                    focused.current = true;
-                  }}
-                  onBlur={() => {
-                    focused.current = false;
-                    submitDraft();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                  className={cn(fieldClass, compactTempClass, "rounded-r-none")}
-                  aria-label="Setpoint °F"
-                />
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={locked}
-                    aria-label="Setpoint presets"
-                    className="h-11 w-10 rounded-l-none border-l-0 px-0"
-                  >
-                    <ChevronDownIcon />
-                  </Button>
-                </PopoverTrigger>
-              </div>
-            </PopoverAnchor>
-            <PopoverContent
-              align="start"
-              className="w-32 p-1"
-              onOpenAutoFocus={(e: Event) => e.preventDefault()}
-            >
-              {PRESETS.map((temp) => (
-                <button
-                  key={temp}
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverAnchor asChild>
+            <div className="flex w-fit items-center">
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={SETPOINT_MIN}
+                max={SETPOINT_MAX}
+                step={SETPOINT_STEP}
+                disabled={locked}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onFocus={() => {
+                  focused.current = true;
+                }}
+                onBlur={() => {
+                  focused.current = false;
+                  submitDraft();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  }
+                }}
+                className={cn(fieldClass, compactTempClass, "rounded-r-none")}
+                aria-label="Setpoint °F"
+              />
+              <PopoverTrigger asChild>
+                <Button
                   type="button"
-                  className={cn(
-                    "flex w-full items-center rounded-md px-2 py-1.5 font-mono text-sm tabular-nums outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
-                    temp === current && "bg-accent text-accent-foreground",
-                  )}
-                  onClick={() => {
-                    setOpen(false);
-                    submit(temp);
-                  }}
+                  variant="outline"
+                  disabled={locked}
+                  aria-label="Setpoint presets"
+                  className="h-11 w-10 rounded-l-none border-l-0 px-0"
                 >
-                  {temp}°
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={locked}
-            className={`${touchBtnClass} px-3`}
-            onClick={() => submit(current + SETPOINT_STEP)}
+                  <ChevronDownIcon />
+                </Button>
+              </PopoverTrigger>
+            </div>
+          </PopoverAnchor>
+          <PopoverContent
+            align="start"
+            className="w-32 p-1"
+            onOpenAutoFocus={(e: Event) => e.preventDefault()}
           >
-            +5
-          </Button>
-        </div>
+            {PRESETS.map((temp) => (
+              <button
+                key={temp}
+                type="button"
+                className={cn(
+                  "flex w-full items-center rounded-md px-2 py-1.5 font-mono text-sm tabular-nums outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
+                  temp === current && "bg-accent text-accent-foreground",
+                )}
+                onClick={() => {
+                  setOpen(false);
+                  submit(temp);
+                }}
+              >
+                {temp}°
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
       </CardContent>
     </Panel>
   );
