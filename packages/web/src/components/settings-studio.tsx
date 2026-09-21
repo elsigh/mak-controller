@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FALLBACK_GRILL_NAME, isKnownGrillId, type StatusResponse } from "@makgrill/shared";
+import { FALLBACK_GRILL_NAME, isKnownGrillId, type SettingsResponse, type StatusResponse } from "@makgrill/shared";
 import { saveGrillNameAction, saveSettingsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,11 +16,17 @@ import { CooldownControls } from "./cooldown-controls";
 import { PageHeader } from "./page-header";
 import { Panel } from "./panel";
 
-export function SettingsStudio({ initialStatus = null }: { initialStatus?: StatusResponse | null }) {
+export function SettingsStudio({
+  initialStatus = null,
+  initialSettings = null,
+}: {
+  initialStatus?: StatusResponse | null;
+  initialSettings?: SettingsResponse | null;
+}) {
   const { status } = useStatus(2500, initialStatus);
-  const [topic, setTopic] = useState("");
-  const [enabled, setEnabled] = useState(false);
-  const [grillName, setGrillName] = useState("");
+  const [topic, setTopic] = useState(initialSettings?.ntfy_topic ?? "");
+  const [enabled, setEnabled] = useState(Boolean(initialSettings?.ntfy_topic));
+  const [grillName, setGrillName] = useState(initialSettings?.grill_name ?? "");
   const [note, setNote] = useState("");
   const [grillNote, setGrillNote] = useState("");
   const grillId = status?.state.grill_id ?? "";

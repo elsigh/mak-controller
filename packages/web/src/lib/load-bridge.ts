@@ -1,4 +1,4 @@
-import type { HistoryDay, HistoryResponse, Recipe, StatusResponse } from "@makgrill/shared";
+import type { HistoryDay, HistoryResponse, Recipe, SettingsResponse, StatusResponse } from "@makgrill/shared";
 import { bridgeFetch } from "./bridge";
 
 async function getJson<T>(path: string, fallback: T): Promise<T> {
@@ -13,6 +13,10 @@ async function getJson<T>(path: string, fallback: T): Promise<T> {
 
 export function loadStatus() {
   return getJson<StatusResponse | null>("/internal/status", null);
+}
+
+export function loadSettings() {
+  return getJson<SettingsResponse | null>("/internal/settings", null);
 }
 
 export function loadRecipes() {
