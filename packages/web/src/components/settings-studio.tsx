@@ -26,7 +26,7 @@ export function SettingsStudio({
   const { status } = useStatus(2500, initialStatus);
   const [topic, setTopic] = useState(initialSettings?.ntfy_topic ?? "");
   const [enabled, setEnabled] = useState(Boolean(initialSettings?.ntfy_topic));
-  const [grillName, setGrillName] = useState(initialSettings?.grill_name ?? "");
+  const [grillNameSeed, setGrillNameSeed] = useState(initialSettings?.grill_name ?? "");
   const [note, setNote] = useState("");
   const [grillNote, setGrillNote] = useState("");
   const grillId = status?.state.grill_id ?? "";
@@ -39,7 +39,7 @@ export function SettingsStudio({
     void api.settings().then((s) => {
       setTopic(s.ntfy_topic ?? "");
       setEnabled(Boolean(s.ntfy_topic));
-      setGrillName(s.grill_name ?? "");
+      setGrillNameSeed(s.grill_name ?? "");
     });
     void api.flagEvents().then(setEvents);
     const id = window.setInterval(() => void api.flagEvents().then(setEvents), 5000);
@@ -66,6 +66,7 @@ export function SettingsStudio({
             action={async (formData) => {
               try {
                 await saveGrillNameAction(formData);
+                setGrillNameSeed(String(formData.get("grill_name") ?? "").trim());
                 setGrillNote("Saved");
               } catch (err) {
                 setGrillNote(err instanceof Error ? err.message : "Save failed");
@@ -80,8 +81,8 @@ export function SettingsStudio({
               <Input
                 id="grill-name"
                 name="grill_name"
-                value={grillName}
-                onChange={(e) => setGrillName(e.target.value)}
+                key={grillNameSeed}
+                defaultValue={grillNameSeed}
                 placeholder={FALLBACK_GRILL_NAME}
                 autoComplete="off"
                 maxLength={48}
