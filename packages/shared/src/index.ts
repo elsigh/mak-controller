@@ -194,7 +194,7 @@ export const SETPOINT_MIN = 150;
 export const SETPOINT_MAX = 500;
 export const SETPOINT_STEP = 5;
 export const ONLINE_WINDOW_MS = 15_000;
-/** Stage 2 after the 15s UI-offline window: ntfy + command.power = 0. */
+/** Stage 2 after the 15s UI-offline window: ntfy + command.power = 0 (ON only). */
 export const SILENCE_THRESHOLD_MS = 30_000;
 /** Kept for tests/docs. Silence ntfy is one-shot while commanded power stays 0. */
 export const SILENCE_RENOTIFY_MS = 3 * 60 * 1000;
