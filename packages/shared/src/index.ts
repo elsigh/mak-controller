@@ -196,7 +196,7 @@ export const SETPOINT_STEP = 5;
 export const ONLINE_WINDOW_MS = 15_000;
 /** Stage 2 after the 15s UI-offline window: ntfy + command.power = 0. */
 export const SILENCE_THRESHOLD_MS = 30_000;
-/** Re-notify while still silent; do not fire on every watchdog tick. */
+/** Kept for tests/docs. Silence ntfy is one-shot while commanded power stays 0. */
 export const SILENCE_RENOTIFY_MS = 3 * 60 * 1000;
 export const SILENCE_WATCHDOG_INTERVAL_MS = 5_000;
 export const FLAMEOUT_DELTA_F = 35;
@@ -334,14 +334,14 @@ export function describePowerFailSafe(reason: PowerFailSafeReason | null | undef
   return POWER_FAILSAFE_LABELS[reason] ?? reason;
 }
 
-/** Watch silence when the last POST showed heat/cooldown or a cook session is open. */
+/** Watch silence only when the last POST reported Power ON. Skip COOLDOWN/COOL/CD/OFF. */
 export function shouldWatchSilence(input: {
   lastSeenEpoch: number;
   lastReportedPower: string;
-  sessionActive: boolean;
+  sessionActive?: boolean;
 }): boolean {
   if (input.lastSeenEpoch <= 0) return false;
-  return input.sessionActive || isActiveCookPower(input.lastReportedPower);
+  return isReportedOn(input.lastReportedPower);
 }
 
 export function isSustainedSilence(

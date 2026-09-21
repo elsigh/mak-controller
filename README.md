@@ -100,7 +100,7 @@ See [`PROTOCOL.md`](./PROTOCOL.md). Summary:
 
 - Grill POST fields: `GrillId`, `Temp`, `Power`, `Probe1`, `Probe2`, `Probe3`, `GrillFlags`
 - Response is `text/html` and **must** be a quoted query string
-- Online if last POST &lt; 15s; after 30s of silence (ON/session) commanded power is force-zeroed
+- Online if last POST &lt; 15s; after 30s of silence while last Power was ON, commanded power is force-zeroed (skip COOLDOWN/COOL/CD/OFF; no repeat ntfy if already 0)
 - After user-initiated `power=0` the grill reports `COOL`/`CD`/`OFF` and commanded power resets to `1`, unless a fail-safe latch or long-gap `OFF` is holding heat off
 
 ## Safety

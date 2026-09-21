@@ -55,7 +55,7 @@ export function Dashboard({
               The grill must POST to <code>/GrillService/Service</code> at least every 15 seconds.
               {status.power_failsafe
                 ? ` Commanded power was force-zeroed (${describePowerFailSafe(status.power_failsafe_reason)}). The next poll will request cooldown.`
-                : " After 30 seconds of silence, commanded power is force-zeroed."}
+                : " After 30 seconds of silence while last Power was ON, commanded power is force-zeroed."}
             </AlertDescription>
           </Alert>
         )}

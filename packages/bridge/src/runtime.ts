@@ -3,7 +3,6 @@ import {
   DEFAULT_STATE,
   FLAMEOUT_DELTA_F,
   FLAMEOUT_DURATION_MS,
-  SILENCE_RENOTIFY_MS,
   SILENCE_WATCHDOG_INTERVAL_MS,
   analyzeBitmaskDiff,
   clampSetpoint,
@@ -147,20 +146,17 @@ export class GrillRuntime {
 
     if (!isSustainedSilence(this.lastSeenEpoch, now)) return;
 
-    let sessionActive = false;
-    try {
-      sessionActive = Boolean(getActiveSession());
-    } catch {
-      sessionActive = false;
-    }
-
     if (
       !shouldWatchSilence({
         lastSeenEpoch: this.lastSeenEpoch,
         lastReportedPower: this.state.power,
-        sessionActive,
       })
     ) {
+      return;
+    }
+
+    // Web Ctrl already off (or a previous silence trip): do not re-notify on an interval.
+    if (this.command.power === 0) {
       return;
     }
 
@@ -169,15 +165,12 @@ export class GrillRuntime {
       "silence",
       `Silence fail-safe: no grill POST for ${silentFor}ms while last Power=${this.state.power}; commanding power=0 so the next poll requests cooldown.`,
     );
-
-    if (this.silenceNotifiedAt === 0 || now - this.silenceNotifiedAt >= SILENCE_RENOTIFY_MS) {
-      this.silenceNotifiedAt = now;
-      this.notify(
-        "MakGrill: grill silent / Web Ctrl lost",
-        `No POST for ${Math.round(silentFor / 1000)}s. Last Power=${this.state.power}. Commanded power set to 0.`,
-        "urgent",
-      );
-    }
+    this.silenceNotifiedAt = now;
+    this.notify(
+      "MakGrill: grill silent / Web Ctrl lost",
+      `No POST for ${Math.round(silentFor / 1000)}s. Last Power=${this.state.power}. Commanded power set to 0.`,
+      "urgent",
+    );
   }
 
   private forcePowerOff(reason: PowerFailSafeReason, message: string) {

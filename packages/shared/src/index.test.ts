@@ -123,23 +123,22 @@ describe("online and cooldown heuristics", () => {
 });
 
 describe("silence and danger fail-safes", () => {
-  it("watches silence for ON/COOL or an active session, not a cold OFF grill", () => {
+  it("watches silence only when last Power was ON, not cooldown or OFF", () => {
     assert.equal(
       shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "ON", sessionActive: false }),
       true,
     );
     assert.equal(
-      shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "COOL", sessionActive: false }),
+      shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "on", sessionActive: false }),
       true,
     );
-    assert.equal(
-      shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "OFF", sessionActive: true }),
-      true,
-    );
-    assert.equal(
-      shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "OFF", sessionActive: false }),
-      false,
-    );
+    for (const power of ["COOL", "COOLDOWN", "cooldown", "CD", "OFF"]) {
+      assert.equal(
+        shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: power, sessionActive: true }),
+        false,
+        `should skip silence watch for Power=${power}`,
+      );
+    }
     assert.equal(
       shouldWatchSilence({ lastSeenEpoch: 0, lastReportedPower: "ON", sessionActive: true }),
       false,

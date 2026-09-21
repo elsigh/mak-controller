@@ -187,7 +187,59 @@ describe("GrillRuntime safety fail-safes", () => {
     runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS + 5_000);
     assert.equal(alerts.length, 1);
     runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS);
-    assert.equal(alerts.length, 2);
+    assert.equal(alerts.length, 1);
+    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS).command.power, 0);
+  });
+
+  it("does not silence-alert or force power when last Power was cooldown/cool/cd/off", () => {
+    for (const power of ["COOLDOWN", "cooldown", "COOL", "CD", "OFF"]) {
+      const alerts: string[] = [];
+      const runtime = new GrillRuntime("", {
+        notify: (title) => alerts.push(title),
+      });
+      const t0 = 27_000_000;
+      runtime.handleGrillPost({ GrillId: "TEST1", Temp: "250", Power: "ON" }, t0);
+      runtime.handleGrillPost({ GrillId: "TEST1", Temp: "180", Power: power }, t0 + 5_000);
+      runtime.tickWatchdog(t0 + 5_000 + SILENCE_THRESHOLD_MS);
+      const status = runtime.getStatus(t0 + 5_000 + SILENCE_THRESHOLD_MS);
+      assert.equal(alerts.length, 0, `unexpected silence ntfy for Power=${power}`);
+      assert.notEqual(status.power_failsafe_reason, "silence");
+    }
+  });
+
+  it("does not silence-alert after user-initiated cooldown when last Power is cooldown", () => {
+    const alerts: string[] = [];
+    const runtime = new GrillRuntime("", {
+      notify: (title) => alerts.push(title),
+    });
+    const t0 = 29_000_000;
+    runtime.handleGrillPost({ GrillId: "TEST1", Temp: "350", Power: "ON" }, t0);
+    runtime.setPower(0);
+    const cool = runtime.handleGrillPost(
+      { GrillId: "TEST1", Temp: "180", Power: "cooldown" },
+      t0 + 5_000,
+    );
+    assert.match(cool, /power=1/);
+    runtime.tickWatchdog(t0 + 5_000 + SILENCE_THRESHOLD_MS);
+    runtime.tickWatchdog(t0 + 5_000 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS);
+    assert.equal(alerts.length, 0);
+    const status = runtime.getStatus(t0 + 5_000 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS);
+    assert.notEqual(status.power_failsafe_reason, "silence");
+  });
+
+  it("does not re-notify when commanded power is already 0 while still silent", () => {
+    const alerts: string[] = [];
+    const runtime = new GrillRuntime("", {
+      notify: (title) => alerts.push(title),
+    });
+    const t0 = 28_000_000;
+    runtime.handleGrillPost({ GrillId: "TEST1", Temp: "350", Power: "ON" }, t0);
+    runtime.setPower(0);
+    runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS);
+    assert.equal(alerts.length, 0);
+    runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS);
+    assert.equal(alerts.length, 0);
+    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS).command.power, 0);
   });
 
   it("alerts on software flameout without commanding power=0", () => {
