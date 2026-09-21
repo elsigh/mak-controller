@@ -46,8 +46,8 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
     return { x: cx + radius * Math.cos(a), y: cy + radius * Math.sin(a) };
   };
   const tick = polar(targetPct);
-  const tickInner = polar(targetPct, r - 16);
-  const tickOuter = polar(targetPct, r + 16);
+  const tickInner = polar(targetPct, r - 20);
+  const tickOuter = polar(targetPct, r + 18);
 
   return (
     <svg viewBox="0 0 220 176" className="mx-auto h-44 w-full" preserveAspectRatio="xMidYMid meet">
@@ -84,11 +84,20 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
         y1={tickInner.y}
         x2={tickOuter.x}
         y2={tickOuter.y}
+        stroke="#e8eef4"
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+      <line
+        x1={tickInner.x}
+        y1={tickInner.y}
+        x2={tickOuter.x}
+        y2={tickOuter.y}
         stroke="#000000"
         strokeWidth="4"
         strokeLinecap="round"
       />
-      <circle cx={tick.x} cy={tick.y} r="6" fill="#000000" stroke="#e8eef4" strokeWidth="1.5" />
+      <circle cx={tick.x} cy={tick.y} r="7" fill="#000000" />
     </svg>
   );
 }
