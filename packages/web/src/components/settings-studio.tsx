@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { FALLBACK_GRILL_NAME, isKnownGrillId, type SettingsResponse, type StatusResponse } from "@makgrill/shared";
-import { saveGrillNameAction, saveSettingsAction } from "@/app/actions";
+import { saveSettingsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,7 +26,6 @@ export function SettingsStudio({
   const { status } = useStatus(2500, initialStatus);
   const [topic, setTopic] = useState(initialSettings?.ntfy_topic ?? "");
   const [enabled, setEnabled] = useState(Boolean(initialSettings?.ntfy_topic));
-  const [grillNameSeed, setGrillNameSeed] = useState(initialSettings?.grill_name ?? "");
   const [note, setNote] = useState("");
   const [grillNote, setGrillNote] = useState("");
   const grillId = status?.state.grill_id ?? "";
@@ -39,7 +38,6 @@ export function SettingsStudio({
     void api.settings().then((s) => {
       setTopic(s.ntfy_topic ?? "");
       setEnabled(Boolean(s.ntfy_topic));
-      setGrillNameSeed(s.grill_name ?? "");
     });
     void api.flagEvents().then(setEvents);
     const id = window.setInterval(() => void api.flagEvents().then(setEvents), 5000);
@@ -63,14 +61,13 @@ export function SettingsStudio({
         </CardHeader>
         <CardContent>
           <form
-            action={async (formData) => {
-              try {
-                await saveGrillNameAction(formData);
-                setGrillNameSeed(String(formData.get("grill_name") ?? "").trim());
-                setGrillNote("Saved");
-              } catch (err) {
-                setGrillNote(err instanceof Error ? err.message : "Save failed");
-              }
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = String(new FormData(e.currentTarget).get("grill_name") ?? "");
+              void api
+                .saveGrillName(name)
+                .then(() => setGrillNote("Saved"))
+                .catch((err) => setGrillNote(err instanceof Error ? err.message : "Save failed"));
             }}
             className="space-y-4"
           >
@@ -81,8 +78,7 @@ export function SettingsStudio({
               <Input
                 id="grill-name"
                 name="grill_name"
-                key={grillNameSeed}
-                defaultValue={grillNameSeed}
+                defaultValue={initialSettings?.grill_name ?? ""}
                 placeholder={FALLBACK_GRILL_NAME}
                 autoComplete="off"
                 maxLength={48}
