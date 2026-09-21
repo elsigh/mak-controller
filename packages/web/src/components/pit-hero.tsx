@@ -41,11 +41,13 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
   const circumference = 2 * Math.PI * r;
   const trackLen = (sweepDeg / 360) * circumference;
   const progressLen = pct * trackLen;
-  const polar = (t: number) => {
+  const polar = (t: number, radius = r) => {
     const a = ((startDeg + sweepDeg * t) * Math.PI) / 180;
-    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    return { x: cx + radius * Math.cos(a), y: cy + radius * Math.sin(a) };
   };
   const tick = polar(targetPct);
+  const tickInner = polar(targetPct, r - 16);
+  const tickOuter = polar(targetPct, r + 16);
 
   return (
     <svg viewBox="0 0 220 176" className="mx-auto h-44 w-full" preserveAspectRatio="xMidYMid meet">
@@ -77,7 +79,16 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
           strokeDasharray={`${progressLen} ${circumference}`}
         />
       </g>
-      <circle cx={tick.x} cy={tick.y} r="5" fill="#b794f6" />
+      <line
+        x1={tickInner.x}
+        y1={tickInner.y}
+        x2={tickOuter.x}
+        y2={tickOuter.y}
+        stroke="#000000"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <circle cx={tick.x} cy={tick.y} r="6" fill="#000000" stroke="#e8eef4" strokeWidth="1.5" />
     </svg>
   );
 }

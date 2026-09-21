@@ -103,10 +103,35 @@ export function TelemetryChart({
                 <Line
                   type="monotone"
                   dataKey="setpoint"
-                  name="Setpoint"
-                  stroke="#b794f6"
+                  stroke="#e8eef4"
+                  strokeWidth={4}
                   dot={false}
-                  strokeDasharray="6 6"
+                  legendType="none"
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="setpoint"
+                  name="Setpoint"
+                  stroke="#000000"
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                  dot={(point: { index: number; cx?: number; cy?: number }) => {
+                    if (point.index !== rows.length - 1 || point.cx == null || point.cy == null) {
+                      return null;
+                    }
+                    return (
+                      <circle
+                        key={`setpoint-dot-${point.index}`}
+                        cx={point.cx}
+                        cy={point.cy}
+                        r={5}
+                        fill="#000000"
+                        stroke="#e8eef4"
+                        strokeWidth={1.5}
+                      />
+                    );
+                  }}
                 />
                 <Line type="monotone" dataKey="probe1" name="Probe 1" stroke="#5cc8ff" dot={false} />
                 <Line type="monotone" dataKey="probe2" name="Probe 2" stroke="#6ee7a8" dot={false} />
