@@ -23,7 +23,7 @@ This service acts as a drop-in replacement for the original cloud backend (`makg
    </p>
 * **Probe Alerts & Web Audio:** Set target internal temperatures for Probes 1–3 with visual pulsing cards and browser-based audio chimes.
 * **Safety Watchdogs:**
-  * **Flameout Detection:** Alerts when pit temperature falls >35°F below the target setpoint for longer than 8 consecutive minutes while running, and commands `power=0`.
+  * **Flameout Detection:** Urgent ntfy + on-screen alert when pit temperature falls >35°F below the target setpoint for longer than 8 consecutive minutes while running. Does **not** command `power=0` — lid-open pit dips false-trigger this watchdog and auto-cooldown can overload the firepot.
   * **Silence Watchdog:** If last reported Power was ON/COOL (or a cook session is active) and no grill POST arrives for **30 seconds**, send an urgent ntfy alert and command `power=0`. Re-notify every **3 minutes** until polls resume.
   * **Danger flags:** Tokens `FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, or `TIME OUT` in `GrillFlags` or `Power` command `power=0` and send an urgent ntfy alert.
   * **Long-gap OFF hold:** After 30+ seconds of silence, if the grill reports `OFF`, do not answer with `power=1` unless the operator turns power on in the UI/API. Fail-safe `power=0` stays latched until that explicit turn-on (the normal COOL/OFF → reset-to-1 path does not undo it).

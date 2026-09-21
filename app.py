@@ -570,7 +570,7 @@ HTML_TEMPLATE = """
             CONNECTION LOST &mdash; Grill polling timed out
         </div>
         <div id="alertFlameout" class="flameout-bar" style="display: none;">
-            ⚠️ FLAMEOUT DETECTED &mdash; Pit temp dropped >35°F below setpoint for 8+ minutes
+            ⚠️ FLAMEOUT WARNING &mdash; Pit temp dropped &gt;35°F below setpoint for 8+ minutes. Heat is still commanded on &mdash; this watchdog does not start cooldown. Check the lid / fire.
         </div>
         <div id="alertFailsafe" class="alert-bar" style="display: none;">
             SAFETY HOLD &mdash; commanded power=0 until you turn the grill on
@@ -1479,7 +1479,7 @@ def process_grill_post(form, now=None):
         # 5. Danger tokens in GrillFlags / Power
         evaluate_danger_flags()
 
-        # 6. Flameout Watchdog (also commands power=0)
+        # 6. Flameout Watchdog (alert only — lid-open dips must not force cooldown)
         reported_pwr = grill_state["power"].upper()
         if reported_pwr == "ON" and pit_temp is not None and setpoint is not None:
             if pit_temp < (setpoint - FLAMEOUT_DELTA_F):
@@ -1488,14 +1488,18 @@ def process_grill_post(form, now=None):
                 elif (now - flameout_start_epoch) >= FLAMEOUT_DURATION_S:
                     if not flameout_triggered:
                         flameout_triggered = True
-                        force_power_off(
-                            "flameout",
-                            "[ALARM] Flameout detected! Pit temp dropped to %s°F (Setpoint: %s°F). Commanding power=0."
-                            % (pit_temp, setpoint),
+                        logger.warning(
+                            "[ALARM] Flameout detected! Pit temp dropped to %s°F (Setpoint: %s°F). Alert only; not commanding power=0.",
+                            pit_temp,
+                            setpoint,
                         )
                         send_push_notification(
                             "MAK Grill Flameout Warning!",
-                            f"Pit temp dropped to {pit_temp}°F (Setpoint: {setpoint}°F). Commanded power set to 0.",
+                            (
+                                f"Pit temp dropped to {pit_temp}°F (Setpoint: {setpoint}°F). "
+                                "Heat is still commanded on — check the lid / fire. "
+                                "This watchdog does not shut the grill down."
+                            ),
                             "urgent",
                         )
             else:

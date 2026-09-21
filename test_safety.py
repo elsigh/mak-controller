@@ -112,7 +112,7 @@ class FailSafeBehaviorTests(unittest.TestCase):
         app.tick_silence_watchdog(t0 + app.SILENCE_THRESHOLD_S + app.SILENCE_RENOTIFY_S)
         self.assertEqual(len(self.alerts), 2)
 
-    def test_software_flameout_commands_power_zero(self):
+    def test_software_flameout_alerts_without_commanding_power_zero(self):
         app.grill_command["setPoint"] = 250
         t0 = 21_000_000.0
         t = t0
@@ -124,10 +124,14 @@ class FailSafeBehaviorTests(unittest.TestCase):
 
         later = t0 + app.FLAMEOUT_DURATION_S
         body = app.process_grill_post({"GrillId": "TEST1", "Temp": "200", "Power": "ON"}, later)
-        self.assertIn("power=0", body)
+        self.assertIn("power=1", body)
         self.assertTrue(app.flameout_triggered)
-        self.assertEqual(app.power_failsafe, "flameout")
-        self.assertTrue(any(a["title"] == "MAK Grill Flameout Warning!" for a in self.alerts))
+        self.assertEqual(app.grill_command["power"], 1)
+        self.assertIsNone(app.power_failsafe)
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(self.alerts[0]["title"], "MAK Grill Flameout Warning!")
+        self.assertEqual(self.alerts[0]["priority"], "urgent")
+        self.assertIn("does not shut the grill down", self.alerts[0]["message"])
 
     def test_unseen_off_grill_is_not_started_with_default_power_one(self):
         body = app.process_grill_post({"GrillId": "TEST1", "Temp": "80", "Power": "OFF"})
