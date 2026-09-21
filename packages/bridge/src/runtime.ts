@@ -448,13 +448,13 @@ export class GrillRuntime {
           this.flameoutStartEpoch = now;
         } else if (now - this.flameoutStartEpoch >= FLAMEOUT_DURATION_MS && !this.flameoutTriggered) {
           this.flameoutTriggered = true;
-          this.forcePowerOff(
-            "flameout",
-            `[ALARM] Flameout detected! Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F). Commanding power=0.`,
+          log(
+            "WARN",
+            `[ALARM] Flameout detected! Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F). Alert only; not commanding power=0.`,
           );
           this.notify(
             "MakGrill Flameout Warning!",
-            `Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F). Commanded power set to 0.`,
+            `Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F). Heat is still commanded on — check the lid / fire. This watchdog does not shut the grill down.`,
             "urgent",
           );
         }

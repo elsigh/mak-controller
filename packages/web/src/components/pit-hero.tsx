@@ -13,7 +13,7 @@ import { setPowerAction, setSetpointAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { compactTempClass, fieldClass, touchBtnClass } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -102,6 +102,10 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
   );
 }
 
+function isPrimaryPointer(event: { pointerType?: string; button?: number }) {
+  return event.pointerType !== "mouse" || event.button === 0 || event.button === undefined;
+}
+
 function EditableSetpoint({
   current,
   locked,
@@ -118,6 +122,7 @@ function EditableSetpoint({
   const rootRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(false);
   const draftRef = useRef(draft);
+  const lastToggleAt = useRef(0);
   draftRef.current = draft;
 
   useEffect(() => {
@@ -126,8 +131,11 @@ function EditableSetpoint({
 
   useEffect(() => {
     if (!editing) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    if (!coarse) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
     setOpen(true);
   }, [editing]);
 
@@ -179,10 +187,18 @@ function EditableSetpoint({
     activeRef.current = true;
     setDraft(String(current));
     setEditing(true);
+    setOpen(true);
+  }
+
+  function togglePresets() {
+    const now = Date.now();
+    if (now - lastToggleAt.current < 400) return;
+    lastToggleAt.current = now;
+    setOpen((value) => !value);
   }
 
   return (
-    <div ref={rootRef} className="mt-2 flex h-12 min-h-12 items-center justify-end">
+    <div ref={rootRef} className="mt-2 flex min-h-12 items-center justify-end">
       {editing ? (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverAnchor asChild>
@@ -209,23 +225,35 @@ function EditableSetpoint({
                 className={cn(fieldClass, compactTempClass, "rounded-r-none")}
                 aria-label="Setpoint °F"
               />
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  aria-label="Setpoint presets"
-                  className="h-11 w-10 rounded-l-none border-l-0 px-0"
-                >
-                  <ChevronDownIcon />
-                </Button>
-              </PopoverTrigger>
+              <Button
+                type="button"
+                variant="outline"
+                aria-label="Setpoint presets"
+                aria-expanded={open}
+                className="h-12 min-h-12 w-12 cursor-pointer touch-manipulation rounded-l-none border-l-0 px-0"
+                onPointerUp={(event) => {
+                  if (!isPrimaryPointer(event)) return;
+                  event.preventDefault();
+                  togglePresets();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  togglePresets();
+                }}
+              >
+                <ChevronDownIcon />
+              </Button>
             </div>
           </PopoverAnchor>
           <PopoverContent
             align="end"
-            className="w-32 p-1"
+            className="w-36 p-1"
             onOpenAutoFocus={(e: Event) => e.preventDefault()}
+            onCloseAutoFocus={(e: Event) => e.preventDefault()}
             onPointerDownOutside={(e: { target: EventTarget | null; preventDefault: () => void }) => {
+              if (rootRef.current?.contains(e.target as Node)) e.preventDefault();
+            }}
+            onInteractOutside={(e: { target: EventTarget | null; preventDefault: () => void }) => {
               if (rootRef.current?.contains(e.target as Node)) e.preventDefault();
             }}
           >
@@ -234,11 +262,20 @@ function EditableSetpoint({
                 key={temp}
                 type="button"
                 className={cn(
-                  "flex w-full items-center rounded-md px-2 py-1.5 font-mono text-sm tabular-nums outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
+                  "flex min-h-11 w-full cursor-pointer touch-manipulation items-center rounded-md px-3 font-mono text-sm tabular-nums outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground active:bg-accent active:text-accent-foreground",
                   temp === current && "bg-primary/18 text-primary",
                 )}
                 onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => apply(temp)}
+                onPointerUp={(event) => {
+                  if (!isPrimaryPointer(event)) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  apply(temp);
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  apply(temp);
+                }}
               >
                 {temp}°
               </button>
@@ -249,8 +286,17 @@ function EditableSetpoint({
         <button
           type="button"
           disabled={locked}
-          onClick={startEditing}
-          className="font-mono text-4xl leading-none text-primary tabular-nums disabled:cursor-default"
+          onPointerUp={(event) => {
+            if (locked || !isPrimaryPointer(event)) return;
+            event.preventDefault();
+            startEditing();
+          }}
+          onClick={(event) => {
+            if (locked) return;
+            event.preventDefault();
+            startEditing();
+          }}
+          className="inline-flex min-h-12 min-w-[5.5rem] cursor-pointer touch-manipulation items-center justify-end rounded-xl px-2 font-mono text-4xl leading-none text-primary tabular-nums select-none [-webkit-tap-highlight-color:transparent] disabled:cursor-default disabled:opacity-60"
           aria-label="Edit setpoint"
         >
           {current}°

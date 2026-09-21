@@ -1,13 +1,16 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { describePowerFailSafe, localCalendarDay, type HistoryResponse, type StatusResponse } from "@makgrill/shared";
 import { AlertCircleIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { useStatus } from "@/hooks/use-status";
 import { PitHero } from "./pit-hero";
 import { ProbeCards } from "./probe-cards";
 import { StatusPills } from "./status-pills";
 import { TelemetryChart } from "./telemetry-chart";
+import { touchBtnClass } from "@/lib/ui";
 
 export function Dashboard({
   initialStatus = null,
@@ -19,6 +22,11 @@ export function Dashboard({
   today?: string;
 }) {
   const { status, error } = useStatus(2500, initialStatus);
+  const [flameoutDismissed, setFlameoutDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!status?.flameout_alert) setFlameoutDismissed(false);
+  }, [status?.flameout_alert]);
 
   return (
     <div className="space-y-4">
@@ -61,12 +69,24 @@ export function Dashboard({
             </AlertDescription>
           </Alert>
         )}
-        {status?.flameout_alert && (
+        {status?.flameout_alert && !flameoutDismissed && (
           <Alert className="rounded-2xl border-transparent bg-orange-500 px-4 py-3 text-black">
-            <AlertTitle className="text-black">Flameout detected</AlertTitle>
+            <AlertTitle className="text-black">Flameout warning</AlertTitle>
             <AlertDescription className="text-black/80">
-              Pit dropped more than 35°F below setpoint for 8+ minutes. Commanded power is 0.
+              Pit dropped more than 35°F below setpoint for 8+ minutes. Heat is still commanded on —
+              this watchdog does not start cooldown. Check the lid / fire.
             </AlertDescription>
+            <AlertAction>
+              <Button
+                type="button"
+                variant="ghost"
+                className={`${touchBtnClass} text-black hover:bg-black/10 hover:text-black`}
+                onPointerUp={() => setFlameoutDismissed(true)}
+                onClick={() => setFlameoutDismissed(true)}
+              >
+                Dismiss
+              </Button>
+            </AlertAction>
           </Alert>
         )}
       </div>

@@ -190,8 +190,11 @@ describe("GrillRuntime safety fail-safes", () => {
     assert.equal(alerts.length, 2);
   });
 
-  it("sets commanded power to 0 on software flameout", () => {
-    const runtime = new GrillRuntime("");
+  it("alerts on software flameout without commanding power=0", () => {
+    const alerts: Array<{ title: string; body: string; priority?: string }> = [];
+    const runtime = new GrillRuntime("", {
+      notify: (title, body, priority) => alerts.push({ title, body, priority }),
+    });
     const t0 = 21_000_000;
     runtime.setSetpoint(250);
     for (let t = t0; t < t0 + FLAMEOUT_DURATION_MS; t += 10_000) {
@@ -202,12 +205,16 @@ describe("GrillRuntime safety fail-safes", () => {
 
     const later = t0 + FLAMEOUT_DURATION_MS;
     const body = runtime.handleGrillPost({ GrillId: "TEST1", Temp: "200", Power: "ON" }, later);
-    assert.match(body, /power=0/);
+    assert.match(body, /power=1/);
     const status = runtime.getStatus(later);
-    assert.equal(status.command.power, 0);
+    assert.equal(status.command.power, 1);
     assert.equal(status.flameout_alert, true);
-    assert.equal(status.power_failsafe, true);
-    assert.equal(status.power_failsafe_reason, "flameout");
+    assert.equal(status.power_failsafe, false);
+    assert.equal(status.power_failsafe_reason, null);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0]?.title, "MakGrill Flameout Warning!");
+    assert.equal(alerts[0]?.priority, "urgent");
+    assert.match(alerts[0]?.body ?? "", /does not shut the grill down/);
   });
 
   it("does not start an unseen OFF grill with default power=1", () => {

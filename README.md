@@ -19,7 +19,7 @@ Do **not** point the grill at Vercel or any serverless endpoint. The grill needs
 
 ## Features
 
-- Live pit / probes / online / cooldown, with a flameout watchdog (pit >35°F below setpoint for 8 minutes while ON) that now commands `power=0`
+- Live pit / probes / online / cooldown, with a flameout watchdog (pit >35°F below setpoint for 8 minutes while ON) that sends urgent ntfy but does **not** command `power=0` (lid-open false positives)
 - Silence watchdog: if last Power was ON (or a cook session is active) and no POST for 30s, urgent ntfy and `power=0`; re-notify every 3 minutes until polls resume
 - Danger tokens in `GrillFlags`/`Power` (`FIRE`, `FLAMEOUT`, `TIMEOUT`, …) force `power=0` and urgent ntfy
 - After a ≥30s gap, an `OFF` report is not answered with `power=1` unless the user turns power on
