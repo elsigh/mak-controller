@@ -4,7 +4,6 @@ import { describePowerFailSafe, localCalendarDay, type HistoryResponse, type Sta
 import { AlertCircleIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStatus } from "@/hooks/use-status";
-import { CooldownControls } from "./cooldown-controls";
 import { PitHero } from "./pit-hero";
 import { ProbeCards } from "./probe-cards";
 import { StatusPills } from "./status-pills";
@@ -74,7 +73,6 @@ export function Dashboard({
       <PitHero status={status} />
       <ProbeCards status={status} />
       <TelemetryChart day={today} initialHistory={initialHistory} />
-      <CooldownControls status={status} />
     </div>
   );
 }

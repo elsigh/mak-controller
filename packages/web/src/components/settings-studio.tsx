@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStatus } from "@/hooks/use-status";
 import { api } from "@/lib/api";
 import { fieldClass, touchBtnClass } from "@/lib/ui";
+import { CooldownControls } from "./cooldown-controls";
 import { PageHeader } from "./page-header";
 import { Panel } from "./panel";
 
@@ -38,8 +39,22 @@ export function SettingsStudio({ initialStatus = null }: { initialStatus?: Statu
     <div className="space-y-4">
       <PageHeader
         title="Settings"
-        description="Optional ntfy alerts, GrillFlags diagnostics, and SQLite maintenance."
+        description="Grill cooldown, optional ntfy alerts, GrillFlags diagnostics, and SQLite maintenance."
       />
+      <Panel>
+        <CardHeader>
+          <CardTitle className="text-xs font-normal uppercase tracking-[0.2em] text-muted-foreground">
+            Grill cooldown
+          </CardTitle>
+          <CardDescription>
+            Turns grill power off and begins the Pellet Boss cooldown cycle. Use this when you want
+            to stop cooking.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CooldownControls status={status} />
+        </CardContent>
+      </Panel>
       <Tabs defaultValue="alerts" className="gap-4">
         <TabsList className="h-11">
           <TabsTrigger value="alerts" className="min-h-9 px-3">

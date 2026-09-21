@@ -23,7 +23,7 @@ export function CooldownControls({ status }: { status: StatusResponse | null }) 
   const canStart = online && isOn && !cooldown;
 
   return (
-    <div className="flex min-h-11 justify-center sm:justify-end">
+    <div className="flex min-h-11">
       {canStart ? (
         <AlertDialog>
           <AlertDialogTrigger asChild>
