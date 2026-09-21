@@ -44,6 +44,10 @@ export async function saveSettingsAction(formData: FormData) {
   await post("/internal/settings", { ntfy_topic: String(formData.get("ntfy_topic") ?? "") });
 }
 
+export async function saveGrillNameAction(formData: FormData) {
+  await post("/internal/settings", { grill_name: String(formData.get("grill_name") ?? "") });
+}
+
 export async function startSavedRecipeAction(formData: FormData) {
   const id = Number(formData.get("id"));
   const res = await bridgeFetch("/internal/recipes");

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { StatusResponse } from "@makgrill/shared";
-import { saveSettingsAction } from "@/app/actions";
+import { FALLBACK_GRILL_NAME, isKnownGrillId, type StatusResponse } from "@makgrill/shared";
+import { saveGrillNameAction, saveSettingsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,11 @@ export function SettingsStudio({ initialStatus = null }: { initialStatus?: Statu
   const { status } = useStatus(2500, initialStatus);
   const [topic, setTopic] = useState("");
   const [enabled, setEnabled] = useState(false);
+  const [grillName, setGrillName] = useState("");
   const [note, setNote] = useState("");
+  const [grillNote, setGrillNote] = useState("");
+  const grillId = status?.state.grill_id ?? "";
+  const knownGrillId = isKnownGrillId(grillId);
   const [events, setEvents] = useState<
     Array<{ timestamp: string; field_name: string; old_val: string; new_val: string; bit_diff: string }>
   >([]);
@@ -29,6 +33,7 @@ export function SettingsStudio({ initialStatus = null }: { initialStatus?: Statu
     void api.settings().then((s) => {
       setTopic(s.ntfy_topic ?? "");
       setEnabled(Boolean(s.ntfy_topic));
+      setGrillName(s.grill_name ?? "");
     });
     void api.flagEvents().then(setEvents);
     const id = window.setInterval(() => void api.flagEvents().then(setEvents), 5000);
@@ -39,8 +44,66 @@ export function SettingsStudio({ initialStatus = null }: { initialStatus?: Statu
     <div className="space-y-4">
       <PageHeader
         title="Settings"
-        description="Grill cooldown, optional ntfy alerts, GrillFlags diagnostics, and SQLite maintenance."
+        description="Grill name, cooldown, optional ntfy alerts, GrillFlags diagnostics, and SQLite maintenance."
       />
+      <Panel>
+        <CardHeader>
+          <CardTitle className="text-xs font-normal uppercase tracking-[0.2em] text-steel">
+            Grill name
+          </CardTitle>
+          <CardDescription>
+            Shown in the header. Saved per grill ID so it sticks after reconnects and restarts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={async (formData) => {
+              try {
+                await saveGrillNameAction(formData);
+                setGrillNote("Saved");
+              } catch (err) {
+                setGrillNote(err instanceof Error ? err.message : "Save failed");
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="grill-name" className="text-sm font-normal">
+                Grill name
+              </Label>
+              <Input
+                id="grill-name"
+                name="grill_name"
+                value={grillName}
+                onChange={(e) => setGrillName(e.target.value)}
+                placeholder={FALLBACK_GRILL_NAME}
+                autoComplete="off"
+                maxLength={48}
+                className={fieldClass}
+              />
+              <p className="text-xs text-muted-foreground">
+                Grill ID{" "}
+                <span className="font-mono tabular-nums text-steel">
+                  {knownGrillId ? grillId : "Unknown"}
+                </span>
+                {knownGrillId
+                  ? " — override is keyed to this grill."
+                  : " — name is provisional until the grill first connects."}
+              </p>
+            </div>
+            <Button type="submit" className={touchBtnClass}>
+              Save
+            </Button>
+            {grillNote ? (
+              <p className={`min-h-5 text-sm ${grillNote === "Saved" ? "text-emerald-300" : "text-destructive"}`}>
+                {grillNote}
+              </p>
+            ) : (
+              <p className="min-h-5" />
+            )}
+          </form>
+        </CardContent>
+      </Panel>
       <Panel>
         <CardHeader>
           <CardTitle className="text-xs font-normal uppercase tracking-[0.2em] text-muted-foreground">

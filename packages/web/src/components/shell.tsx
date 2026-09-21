@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { FALLBACK_GRILL_NAME, type StatusResponse } from "@makgrill/shared";
 import { MenuIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -15,6 +16,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { useStatus } from "@/hooks/use-status";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
@@ -25,9 +27,17 @@ const LINKS = [
 
 const MENU_LINKS = [...LINKS, { href: "/about", label: "About" }];
 
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({
+  children,
+  initialStatus = null,
+}: {
+  children: React.ReactNode;
+  initialStatus?: StatusResponse | null;
+}) {
   const pathname = usePathname();
   const router = useRouter();
+  const { status } = useStatus(2500, initialStatus);
+  const grillName = status?.grill_name?.trim() || FALLBACK_GRILL_NAME;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -50,7 +60,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             />
           </span>
           <span className="min-w-0">
-            <span className="block text-lg font-semibold tracking-tight">MakGrill</span>
+            <span className="block truncate text-lg font-semibold tracking-tight">{grillName}</span>
             <span className="block text-xs uppercase tracking-[0.22em] text-muted-foreground">
               Pellet Boss
             </span>
@@ -88,7 +98,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </SheetTrigger>
           <SheetContent side="right" className="bg-popover/95">
             <SheetHeader>
-              <SheetTitle>MakGrill</SheetTitle>
+              <SheetTitle className="truncate">{grillName}</SheetTitle>
               <SheetDescription>Pellet Boss controller</SheetDescription>
             </SheetHeader>
             <nav className="flex flex-col gap-1 px-4">

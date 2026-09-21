@@ -12,7 +12,7 @@ export default async function HomePage() {
     loadHistory({ day: today }),
   ]);
   return (
-    <Shell>
+    <Shell initialStatus={initialStatus}>
       <Dashboard initialStatus={initialStatus} initialHistory={initialHistory} today={today} />
     </Shell>
   );

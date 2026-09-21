@@ -14,7 +14,7 @@ const {
   SILENCE_RENOTIFY_MS,
   SILENCE_THRESHOLD_MS,
 } = await import("@makgrill/shared");
-const { initDb } = await import("./db.ts");
+const { getGrillNames, getSetting, initDb, setGrillDisplayName } = await import("./db.ts");
 const { GrillRuntime } = await import("./runtime.ts");
 
 describe("GrillRuntime protocol", () => {
@@ -24,6 +24,22 @@ describe("GrillRuntime protocol", () => {
 
   after(() => {
     rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("binds a provisional grill name on the first GrillId POST", () => {
+    const runtime = new GrillRuntime("");
+    assert.equal(runtime.getStatus().grill_name, "MakGrill");
+    setGrillDisplayName("Unknown", "Backyard MAK");
+    assert.equal(runtime.getStatus().grill_name, "Backyard MAK");
+    runtime.handleGrillPost({
+      GrillId: "GRILL-NAME-1",
+      Temp: "200",
+      Power: "ON",
+    });
+    assert.equal(runtime.getStatus().state.grill_id, "GRILL-NAME-1");
+    assert.equal(runtime.getStatus().grill_name, "Backyard MAK");
+    assert.equal(getGrillNames()["GRILL-NAME-1"], "Backyard MAK");
+    assert.equal(getSetting("grill_name_provisional"), "");
   });
 
   it("returns a quoted command string and records telemetry", () => {

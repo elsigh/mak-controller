@@ -7,9 +7,22 @@ import { after, before, describe, it } from "node:test";
 const dataDir = mkdtempSync(join(tmpdir(), "makgrill-db-"));
 process.env.DB_PATH = join(dataDir, "cooks.db");
 
-const { VOLATILE_RETENTION_DAYS } = await import("@makgrill/shared");
-const { exportDayRows, getHistory, getHistoryByDay, initDb, insertTelemetry, listHistoryDays, pruneDatabase } =
-  await import("./db.ts");
+const { FALLBACK_GRILL_NAME, VOLATILE_RETENTION_DAYS } = await import("@makgrill/shared");
+const {
+  bindProvisionalGrillName,
+  exportDayRows,
+  getGrillNameOverride,
+  getGrillNames,
+  getHistory,
+  getHistoryByDay,
+  getSetting,
+  initDb,
+  insertTelemetry,
+  listHistoryDays,
+  pruneDatabase,
+  resolveStoredGrillDisplayName,
+  setGrillDisplayName,
+} = await import("./db.ts");
 
 function sample(timestamp: string, extras: { sessionId?: number | null; grillTemp?: number } = {}) {
   insertTelemetry({
@@ -107,5 +120,27 @@ describe("day-grouped history", () => {
       listHistoryDays().some((row) => row.day === stale.slice(0, 10)),
       false,
     );
+  });
+
+  it("stores a provisional grill name and binds it on first known id", () => {
+    assert.equal(resolveStoredGrillDisplayName("Unknown"), FALLBACK_GRILL_NAME);
+    setGrillDisplayName("Unknown", "  Studio MAK  ");
+    assert.equal(getGrillNameOverride("Unknown"), "Studio MAK");
+    assert.equal(resolveStoredGrillDisplayName("Unknown"), "Studio MAK");
+    assert.deepEqual(getGrillNames(), {});
+
+    bindProvisionalGrillName("GRILL-A");
+    assert.equal(getGrillNames()["GRILL-A"], "Studio MAK");
+    assert.equal(getSetting("grill_name_provisional"), "");
+    assert.equal(resolveStoredGrillDisplayName("GRILL-A"), "Studio MAK");
+
+    setGrillDisplayName("Unknown", "Should not overwrite");
+    bindProvisionalGrillName("GRILL-A");
+    assert.equal(getGrillNames()["GRILL-A"], "Studio MAK");
+    assert.equal(getSetting("grill_name_provisional"), "");
+
+    setGrillDisplayName("GRILL-A", "");
+    assert.equal(getGrillNameOverride("GRILL-A"), "");
+    assert.equal(resolveStoredGrillDisplayName("GRILL-A"), FALLBACK_GRILL_NAME);
   });
 });

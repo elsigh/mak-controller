@@ -1,4 +1,4 @@
-import type { HistoryDay, HistoryResponse, Recipe, RecipeStage, StatusResponse } from "@makgrill/shared";
+import type { HistoryDay, HistoryResponse, Recipe, RecipeStage, SettingsResponse, StatusResponse } from "@makgrill/shared";
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -49,9 +49,14 @@ export const api = {
     json("/api/automation/start", { method: "POST", body: JSON.stringify({ name, stages }) }),
   stopAutomation: () => json("/api/automation/stop", { method: "POST" }),
   nextStage: () => json("/api/automation/next", { method: "POST" }),
-  settings: () => json<{ ntfy_topic: string }>("/api/settings"),
+  settings: () => json<SettingsResponse>("/api/settings"),
   saveSettings: (ntfy_topic: string) =>
     json("/api/settings", { method: "POST", body: JSON.stringify({ ntfy_topic }) }),
+  saveGrillName: (grill_name: string) =>
+    json<{ success: boolean; settings: SettingsResponse }>("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({ grill_name }),
+    }),
   testNtfy: () => json("/api/settings/test-ntfy", { method: "POST" }),
   flagEvents: () =>
     json<

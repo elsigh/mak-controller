@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function AboutPage() {
   const status = await loadStatus();
   return (
-    <Shell>
+    <Shell initialStatus={status}>
       <AboutStudio initialStatus={status} buildCommit={getBuildCommit()} />
     </Shell>
   );

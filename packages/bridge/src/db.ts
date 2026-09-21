@@ -3,12 +3,15 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import {
   DEFAULT_RECIPES,
+  FALLBACK_GRILL_NAME,
   HISTORY_CHART_DOWNSAMPLE_SECONDS,
   VOLATILE_RETENTION_DAYS,
   downsampleByTime,
   formatLocalStamp,
+  isKnownGrillId,
   isValidHistoryDay,
   nextCalendarDay,
+  resolveGrillDisplayName,
 } from "@makgrill/shared";
 import type { CookSession, FlagEvent, HistoryDay, HistoryResponse, Recipe, RecipeStage } from "@makgrill/shared";
 import { config, log } from "./config.ts";
@@ -98,6 +101,72 @@ export function getSetting(key: string): string {
 
 export function setSetting(key: string, value: string): void {
   getDb().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+}
+
+/** JSON map of grillId → displayName in the existing settings table. */
+export const GRILL_NAMES_KEY = "grill_names";
+/**
+ * Name saved before any GrillId POST. Bound to the real id on first poll
+ * so Settings still works offline / on a fresh container.
+ */
+export const GRILL_NAME_PROVISIONAL_KEY = "grill_name_provisional";
+
+export function getGrillNames(): Record<string, string> {
+  const raw = getSetting(GRILL_NAMES_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const names: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value.trim()) names[key] = value.trim();
+    }
+    return names;
+  } catch {
+    return {};
+  }
+}
+
+export function getGrillNameOverride(grillId: string): string {
+  if (isKnownGrillId(grillId)) return getGrillNames()[grillId] ?? "";
+  return getSetting(GRILL_NAME_PROVISIONAL_KEY).trim();
+}
+
+export function resolveStoredGrillDisplayName(grillId: string): string {
+  return resolveGrillDisplayName({
+    grillId,
+    names: getGrillNames(),
+    provisional: getSetting(GRILL_NAME_PROVISIONAL_KEY),
+  });
+}
+
+export function setGrillDisplayName(grillId: string, name: string): { grill_id: string; grill_name: string } {
+  const trimmed = name.trim();
+  if (isKnownGrillId(grillId)) {
+    const names = getGrillNames();
+    if (trimmed) names[grillId] = trimmed;
+    else delete names[grillId];
+    setSetting(GRILL_NAMES_KEY, JSON.stringify(names));
+    setSetting(GRILL_NAME_PROVISIONAL_KEY, "");
+    return { grill_id: grillId, grill_name: trimmed || FALLBACK_GRILL_NAME };
+  }
+  setSetting(GRILL_NAME_PROVISIONAL_KEY, trimmed);
+  return { grill_id: grillId || "Unknown", grill_name: trimmed || FALLBACK_GRILL_NAME };
+}
+
+/** Attach a provisional name to the first real GrillId; no-op if that id already has one. */
+export function bindProvisionalGrillName(grillId: string): void {
+  if (!isKnownGrillId(grillId)) return;
+  const names = getGrillNames();
+  const provisional = getSetting(GRILL_NAME_PROVISIONAL_KEY).trim();
+  if (names[grillId]) {
+    if (provisional) setSetting(GRILL_NAME_PROVISIONAL_KEY, "");
+    return;
+  }
+  if (!provisional) return;
+  names[grillId] = provisional;
+  setSetting(GRILL_NAMES_KEY, JSON.stringify(names));
+  setSetting(GRILL_NAME_PROVISIONAL_KEY, "");
 }
 
 export function insertTelemetry(row: {

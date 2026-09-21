@@ -6,12 +6,15 @@ import {
   deleteRecipe,
   exportDayRows,
   exportSessionRows,
+  getGrillNameOverride,
   getSetting,
   listFlagEvents,
   listHistoryDays,
   listRecipes,
   listSessions,
   pruneDatabase,
+  resolveStoredGrillDisplayName,
+  setGrillDisplayName,
   setSetting,
   upsertRecipe,
 } from "../db.ts";
@@ -187,7 +190,20 @@ export function internalRoutes(runtime: GrillRuntime) {
     return c.json({ success: true });
   });
 
-  app.get("/settings", (c) => c.json({ ntfy_topic: runtime.getNtfyTopic() || getSetting("ntfy_topic") }));
+  // Grill names live in the existing settings table (grill_names JSON +
+  // grill_name_provisional). Offline saves stay provisional until the first
+  // GrillService POST with a real GrillId binds that name to the id.
+  function settingsPayload() {
+    const grillId = runtime.getStatus().state.grill_id;
+    return {
+      ntfy_topic: runtime.getNtfyTopic() || getSetting("ntfy_topic"),
+      grill_id: grillId,
+      grill_name: getGrillNameOverride(grillId),
+      grill_display_name: resolveStoredGrillDisplayName(grillId),
+    };
+  }
+
+  app.get("/settings", (c) => c.json(settingsPayload()));
 
   app.post("/settings", async (c) => {
     const body = await c.req.json().catch(() => ({}));
@@ -196,7 +212,10 @@ export function internalRoutes(runtime: GrillRuntime) {
       runtime.setNtfyTopic(topic);
       setSetting("ntfy_topic", topic);
     }
-    return c.json({ success: true, settings: { ntfy_topic: runtime.getNtfyTopic() } });
+    if ("grill_name" in body) {
+      setGrillDisplayName(runtime.getStatus().state.grill_id, String(body.grill_name ?? ""));
+    }
+    return c.json({ success: true, settings: settingsPayload() });
   });
 
   app.post("/settings/test-ntfy", async (c) => {

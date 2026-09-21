@@ -19,10 +19,44 @@ import {
   shouldResetCommandedPower,
   shouldWatchSilence,
   unknownGrillPostKeys,
+  isKnownGrillId,
+  resolveGrillDisplayName,
   DEFAULT_COMMAND,
+  FALLBACK_GRILL_NAME,
   HISTORY_TIMEZONE,
   SILENCE_THRESHOLD_MS,
+  UNKNOWN_GRILL_ID,
 } from "./index.ts";
+
+describe("grill display name", () => {
+  it("treats empty and Unknown as not-yet-known grill IDs", () => {
+    assert.equal(isKnownGrillId(""), false);
+    assert.equal(isKnownGrillId(UNKNOWN_GRILL_ID), false);
+    assert.equal(isKnownGrillId("  "), false);
+    assert.equal(isKnownGrillId("MAK-123"), true);
+  });
+
+  it("prefers the per-id override, then provisional, then MakGrill", () => {
+    assert.equal(
+      resolveGrillDisplayName({
+        grillId: "MAK-1",
+        names: { "MAK-1": "Backyard" },
+        provisional: "Studio",
+      }),
+      "Backyard",
+    );
+    assert.equal(
+      resolveGrillDisplayName({
+        grillId: UNKNOWN_GRILL_ID,
+        names: { "MAK-1": "Backyard" },
+        provisional: "Studio",
+      }),
+      "Studio",
+    );
+    assert.equal(resolveGrillDisplayName({ grillId: UNKNOWN_GRILL_ID }), FALLBACK_GRILL_NAME);
+    assert.equal(resolveGrillDisplayName({ grillId: "MAK-1", names: { "MAK-1": "  " } }), FALLBACK_GRILL_NAME);
+  });
+});
 
 describe("setpoint", () => {
   it("clamps and snaps to 5°F steps", () => {

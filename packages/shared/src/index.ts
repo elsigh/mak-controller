@@ -68,6 +68,18 @@ export interface StatusResponse {
   power_failsafe_reason: PowerFailSafeReason | null;
   at_set: boolean;
   automation: AutomationStatus;
+  /** Resolved header title; never blank (falls back to FALLBACK_GRILL_NAME). */
+  grill_name: string;
+}
+
+/** Settings persisted on the bridge (`settings` SQLite table). */
+export interface SettingsResponse {
+  ntfy_topic: string;
+  grill_id: string;
+  /** Editable override for the current grill (empty = use product fallback). */
+  grill_name: string;
+  /** Header title after fallback; never blank. */
+  grill_display_name: string;
 }
 
 export interface HistoryDay {
@@ -229,8 +241,12 @@ export const DEFAULT_COMMAND: GrillCommand = {
   power: 1,
 };
 
+export const UNKNOWN_GRILL_ID = "Unknown";
+/** In-app header fallback when no grillId → name override is set. */
+export const FALLBACK_GRILL_NAME = "MakGrill";
+
 export const DEFAULT_STATE: GrillState = {
-  grill_id: "Unknown",
+  grill_id: UNKNOWN_GRILL_ID,
   temp: "--",
   power: "OFF",
   probe1: "",
@@ -239,6 +255,27 @@ export const DEFAULT_STATE: GrillState = {
   flags: "",
   last_seen: "Waiting for data...",
 };
+
+export function isKnownGrillId(grillId: string | null | undefined): boolean {
+  const id = String(grillId ?? "").trim();
+  return id !== "" && id !== UNKNOWN_GRILL_ID;
+}
+
+/** Header title: per-id override, else provisional (offline) name, else MakGrill. */
+export function resolveGrillDisplayName(input: {
+  grillId: string | null | undefined;
+  names?: Record<string, string> | null;
+  provisional?: string | null;
+}): string {
+  const id = String(input.grillId ?? "").trim();
+  const names = input.names ?? {};
+  if (isKnownGrillId(id)) {
+    const named = names[id]?.trim();
+    if (named) return named;
+  }
+  const provisional = input.provisional?.trim();
+  return provisional || FALLBACK_GRILL_NAME;
+}
 
 export const DEFAULT_RECIPES: Array<{ name: string; stages: RecipeStage[] }> = [
   {

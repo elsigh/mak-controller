@@ -31,11 +31,13 @@ import type {
 } from "@makgrill/shared";
 import { log } from "./config.ts";
 import {
+  bindProvisionalGrillName,
   getActiveSession,
   getHistory,
   getHistoryByDay,
   insertFlagEvent,
   insertTelemetry,
+  resolveStoredGrillDisplayName,
   startSession,
   stopActiveSession,
 } from "./db.ts";
@@ -209,6 +211,7 @@ export class GrillRuntime {
       flags: form.GrillFlags ?? "",
       last_seen: clock.toTimeString().slice(0, 8),
     };
+    bindProvisionalGrillName(this.state.grill_id);
 
     const pitTemp = parseNumber(this.state.temp);
     this.maybeAdoptSetpointOnReconnect(wasOnline, pitTemp);
@@ -585,6 +588,7 @@ export class GrillRuntime {
       power_failsafe_reason: this.powerFailSafe,
       at_set: this.state.flags.toUpperCase().includes("ATSET"),
       automation,
+      grill_name: resolveStoredGrillDisplayName(this.state.grill_id),
     };
   }
 }
