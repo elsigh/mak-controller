@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MenuIcon } from "lucide-react";
@@ -38,8 +39,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 py-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6">
       <header className="mb-6 flex h-14 items-center justify-between gap-3">
         <Link href="/" className="flex min-w-0 items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#e8eef4] via-[#9aa5b3] to-[#5d6773] text-sm font-black text-[#07090d] shadow-[0_0_20px_rgba(183,148,246,0.22)] ring-1 ring-white/25">
-            MG
+          <span className="inline-flex size-11 shrink-0 overflow-hidden rounded-2xl ring-1 ring-white/20">
+            <Image
+              src="/mak-flame-192.png"
+              alt="MakGrill"
+              width={44}
+              height={44}
+              priority
+              className="size-11"
+            />
           </span>
           <span className="min-w-0">
             <span className="block text-lg font-semibold tracking-tight">MakGrill</span>
