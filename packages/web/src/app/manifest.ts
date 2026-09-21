@@ -12,19 +12,19 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#07090d",
     icons: [
       {
-        src: "/icon-192.png",
+        src: "/mak-flame-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-512.png",
+        src: "/mak-flame-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-512.png",
+        src: "/mak-flame-512-maskable.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

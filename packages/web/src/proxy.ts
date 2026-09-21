@@ -13,6 +13,7 @@ export function proxy(request: NextRequest) {
     pathname === "/favicon.ico" ||
     pathname === "/manifest.webmanifest" ||
     pathname === "/manifest.json" ||
+    pathname.startsWith("/mak-flame-") ||
     pathname === "/icon-192.png" ||
     pathname === "/icon-512.png" ||
     pathname === "/apple-touch-icon.png" ||

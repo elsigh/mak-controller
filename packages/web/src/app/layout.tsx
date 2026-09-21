@@ -39,10 +39,11 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/mak-flame-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/mak-flame-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/mak-flame-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/mak-flame-180.png", sizes: "180x180", type: "image/png" }],
   },
   other: {
     "apple-mobile-web-app-capable": "yes",
