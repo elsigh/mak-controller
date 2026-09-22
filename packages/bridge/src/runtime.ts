@@ -1,8 +1,6 @@
 import {
   DEFAULT_COMMAND,
   DEFAULT_STATE,
-  FLAMEOUT_DELTA_F,
-  FLAMEOUT_DURATION_MS,
   SILENCE_WATCHDOG_INTERVAL_MS,
   analyzeBitmaskDiff,
   clampSetpoint,
@@ -66,8 +64,6 @@ export class GrillRuntime {
   /** True after an explicit UI/API power-on until the next grill poll delivers it. */
   private pendingExplicitPowerOn = false;
   private prevFlags: string | null = null;
-  private flameoutStartEpoch: number | null = null;
-  private flameoutTriggered = false;
   private loggedOnline = false;
   private silenceNotifiedAt = 0;
   private powerFailSafe: PowerFailSafeReason | null = null;
@@ -252,7 +248,6 @@ export class GrillRuntime {
     this.evaluateProbeAlarms();
     this.evaluateAtSet(pitTemp, setpoint);
     this.evaluateDangerFlags();
-    this.evaluateFlameout(now, pitTemp, setpoint);
     this.applyPowerReconnectPolicy(previousSeen, now);
 
     return encodeGrillResponse(this.command);
@@ -436,34 +431,6 @@ export class GrillRuntime {
     }
   }
 
-  private evaluateFlameout(now: number, pitTemp: number | null, setpoint: number | null) {
-    const reported = this.state.power.toUpperCase();
-    if (reported === "ON" && pitTemp !== null && setpoint !== null) {
-      if (pitTemp < setpoint - FLAMEOUT_DELTA_F) {
-        if (this.flameoutStartEpoch === null) {
-          this.flameoutStartEpoch = now;
-        } else if (now - this.flameoutStartEpoch >= FLAMEOUT_DURATION_MS && !this.flameoutTriggered) {
-          this.flameoutTriggered = true;
-          log(
-            "WARN",
-            `[ALARM] Flameout detected! Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F). Alert only; not commanding power=0.`,
-          );
-          this.notify(
-            "MakGrill Flameout Warning!",
-            `Pit temp dropped to ${pitTemp}°F (Setpoint: ${setpoint}°F). Heat is still commanded on — check the lid / fire. This watchdog does not shut the grill down.`,
-            "urgent",
-          );
-        }
-      } else {
-        this.flameoutStartEpoch = null;
-        this.flameoutTriggered = false;
-      }
-    } else {
-      this.flameoutStartEpoch = null;
-      this.flameoutTriggered = false;
-    }
-  }
-
   private evaluateDangerFlags() {
     const haystack = `${this.state.flags} ${this.state.power}`;
     if (!containsDangerToken(haystack)) {
@@ -583,7 +550,6 @@ export class GrillRuntime {
       active_session: getActiveSession(),
       probe_targets: { ...this.probeTargets },
       probe_alerts: { ...this.probeAlerted },
-      flameout_alert: this.flameoutTriggered,
       power_failsafe: this.powerFailSafe !== null,
       power_failsafe_reason: this.powerFailSafe,
       at_set: this.state.flags.toUpperCase().includes("ATSET"),

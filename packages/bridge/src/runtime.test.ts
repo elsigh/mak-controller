@@ -9,7 +9,6 @@ process.env.DB_PATH = join(dataDir, "cooks.db");
 process.env.BRIDGE_PORT = "0";
 
 const {
-  FLAMEOUT_DURATION_MS,
   ONLINE_WINDOW_MS,
   SILENCE_RENOTIFY_MS,
   SILENCE_THRESHOLD_MS,
@@ -258,31 +257,24 @@ describe("GrillRuntime safety fail-safes", () => {
     assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS).command.power, 0);
   });
 
-  it("alerts on software flameout without commanding power=0", () => {
+  it("does not alert or change power when pit stays 35°F+ under setpoint", () => {
+    const softWindowMs = 8 * 60 * 1000;
     const alerts: Array<{ title: string; body: string; priority?: string }> = [];
     const runtime = new GrillRuntime("", {
       notify: (title, body, priority) => alerts.push({ title, body, priority }),
     });
     const t0 = 21_000_000;
     runtime.setSetpoint(250);
-    for (let t = t0; t < t0 + FLAMEOUT_DURATION_MS; t += 10_000) {
-      runtime.handleGrillPost({ GrillId: "TEST1", Temp: "200", Power: "ON" }, t);
-      assert.equal(runtime.getStatus(t).command.power, 1);
-      assert.equal(runtime.getStatus(t).flameout_alert, false);
+    for (let t = t0; t <= t0 + softWindowMs + 60_000; t += 10_000) {
+      const body = runtime.handleGrillPost({ GrillId: "TEST1", Temp: "200", Power: "ON" }, t);
+      assert.match(body, /power=1/);
+      const status = runtime.getStatus(t);
+      assert.equal(status.command.power, 1);
+      assert.equal(status.power_failsafe, false);
+      assert.equal(status.power_failsafe_reason, null);
+      assert.equal("flameout_alert" in status, false);
     }
-
-    const later = t0 + FLAMEOUT_DURATION_MS;
-    const body = runtime.handleGrillPost({ GrillId: "TEST1", Temp: "200", Power: "ON" }, later);
-    assert.match(body, /power=1/);
-    const status = runtime.getStatus(later);
-    assert.equal(status.command.power, 1);
-    assert.equal(status.flameout_alert, true);
-    assert.equal(status.power_failsafe, false);
-    assert.equal(status.power_failsafe_reason, null);
-    assert.equal(alerts.length, 1);
-    assert.equal(alerts[0]?.title, "MakGrill Flameout Warning!");
-    assert.equal(alerts[0]?.priority, "urgent");
-    assert.match(alerts[0]?.body ?? "", /does not shut the grill down/);
+    assert.equal(alerts.length, 0);
   });
 
   it("does not start an unseen OFF grill with default power=1", () => {
@@ -331,7 +323,10 @@ describe("GrillRuntime safety fail-safes", () => {
   });
 
   it("sets commanded power to 0 on danger tokens in GrillFlags or Power", () => {
-    const flagsRuntime = new GrillRuntime("");
+    const flagAlerts: Array<{ title: string; priority?: string }> = [];
+    const flagsRuntime = new GrillRuntime("", {
+      notify: (title, _body, priority) => flagAlerts.push({ title, priority }),
+    });
     const flagsBody = flagsRuntime.handleGrillPost({
       GrillId: "TEST1",
       Temp: "350",
@@ -340,8 +335,14 @@ describe("GrillRuntime safety fail-safes", () => {
     });
     assert.match(flagsBody, /power=0/);
     assert.equal(flagsRuntime.getStatus().power_failsafe_reason, "danger");
+    assert.equal(flagAlerts.length, 1);
+    assert.equal(flagAlerts[0]?.title, "MakGrill: danger flag");
+    assert.equal(flagAlerts[0]?.priority, "urgent");
 
-    const powerRuntime = new GrillRuntime("");
+    const powerAlerts: Array<{ title: string; priority?: string }> = [];
+    const powerRuntime = new GrillRuntime("", {
+      notify: (title, _body, priority) => powerAlerts.push({ title, priority }),
+    });
     const powerBody = powerRuntime.handleGrillPost({
       GrillId: "TEST1",
       Temp: "350",
@@ -349,6 +350,10 @@ describe("GrillRuntime safety fail-safes", () => {
     });
     assert.match(powerBody, /power=0/);
     assert.equal(powerRuntime.getStatus().command.power, 0);
+    assert.equal(powerRuntime.getStatus().power_failsafe_reason, "danger");
+    assert.equal(powerAlerts.length, 1);
+    assert.equal(powerAlerts[0]?.title, "MakGrill: danger flag");
+    assert.equal(powerAlerts[0]?.priority, "urgent");
   });
 
   it("does not false-trip during continuous healthy polls", () => {
@@ -366,7 +371,7 @@ describe("GrillRuntime safety fail-safes", () => {
       const status = runtime.getStatus(t);
       assert.equal(status.command.power, 1);
       assert.equal(status.power_failsafe, false);
-      assert.equal(status.flameout_alert, false);
+      assert.equal("flameout_alert" in status, false);
     }
     assert.equal(alerts.length, 0);
   });

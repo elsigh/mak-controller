@@ -9,7 +9,6 @@ export function StatusPills({ status }: { status: StatusResponse | null }) {
   const online = status?.is_online ?? false;
   const cooldown = status?.is_cooldown ?? false;
   const power = status?.state.power ?? "--";
-  const flameout = status?.flameout_alert ?? false;
   const held = status?.power_failsafe ?? false;
   const atSet = status?.at_set ?? false;
 
@@ -52,14 +51,6 @@ export function StatusPills({ status }: { status: StatusResponse | null }) {
           className="h-8 rounded-full border-primary/35 bg-primary/12 px-3 text-[11px] uppercase tracking-[0.16em] text-primary"
         >
           At setpoint
-        </Badge>
-      )}
-      {flameout && (
-        <Badge
-          variant="outline"
-          className="h-8 rounded-full border-red-400/40 bg-red-500/15 px-3 text-[11px] uppercase tracking-[0.16em] text-red-100"
-        >
-          Flameout
         </Badge>
       )}
       {held && (

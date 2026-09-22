@@ -125,12 +125,6 @@ export function AboutStudio({
               mono={false}
             />
             <MetaRow
-              label="Flameout"
-              value={display(status?.flameout_alert)}
-              pending={pending}
-              mono={false}
-            />
-            <MetaRow
               label="Power fail-safe"
               value={
                 status?.power_failsafe

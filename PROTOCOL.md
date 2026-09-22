@@ -37,7 +37,10 @@ Grill is online if the last POST was less than 15 seconds ago.
 
 ## Safety fail-safes (2026-09-20 Web Ctrl blackout)
 
-Two-stage silence policy, plus an alert-only software flameout watchdog and danger-token holds.
+Two-stage silence policy and Pellet Boss danger-token holds.
+MakGrill does not watch pit temperature against setpoint for a software flameout
+(the former 35°F-below-setpoint / 8 minute rule). Lid-open dips false-triggered
+that watchdog. Flameout shutdown relies on Pellet Boss danger flags only.
 A background watchdog (`setInterval` every 5s) watches `lastSeenEpoch` even when
 `handleGrillPost` is not running — silence is invisible if we only look inside
 the POST handler.
@@ -48,8 +51,7 @@ the POST handler.
 | 2. Silence fail-safe | 30s (`SILENCE_THRESHOLD_MS`) | If last Power was **ON**: urgent ntfy `"MakGrill: grill silent / Web Ctrl lost"` and `command.power = 0` so the **next** successful poll requests cooldown. Skip `COOLDOWN` / `COOL` / `CD` / `OFF`. |
 
 - If commanded power is already `0`, do not re-notify on an interval while still silent. Reset the notify latch when polls resume.
-- Software flameout (pit ≥35°F below setpoint for 8 minutes while ON): urgent ntfy **only**. Do **not** auto-command `power=0` — lid-open dips false-trigger this watchdog.
-- If `GrillFlags` or `Power` contains danger tokens (case-insensitive): `FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, `TIME OUT` → `power=0` + urgent ntfy.
+- If `GrillFlags` or `Power` contains danger tokens (case-insensitive): `FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, `TIME OUT` → `power=0` + urgent ntfy. A low pit versus setpoint does not.
 - After a gap ≥30s, if the grill reports `OFF`, do **not** answer with `power=1` unless the user explicitly turns power on via UI/API. Default/latched `power=1` must not restart a firmware-shutdown grill.
 - Fail-safe `power=0` is latched until that explicit UI/API power-on. The normal COOL/OFF → reset-to-1 path does not undo a latch.
 - Reconnect setpoint adoption (below) is unchanged and can run on the same poll as a power hold.

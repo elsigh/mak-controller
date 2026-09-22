@@ -53,7 +53,7 @@ export interface AutomationStatus {
   current_stage: RecipeStage | null;
 }
 
-export type PowerFailSafeReason = "silence" | "flameout" | "danger" | "offline-off";
+export type PowerFailSafeReason = "silence" | "danger" | "offline-off";
 
 export interface StatusResponse {
   state: GrillState;
@@ -63,7 +63,6 @@ export interface StatusResponse {
   active_session: CookSession | null;
   probe_targets: Record<ProbeKey, number | null>;
   probe_alerts: Record<ProbeKey, boolean>;
-  flameout_alert: boolean;
   power_failsafe: boolean;
   power_failsafe_reason: PowerFailSafeReason | null;
   at_set: boolean;
@@ -211,8 +210,6 @@ export const SILENCE_THRESHOLD_MS = 30_000;
 /** Kept for tests/docs. Silence ntfy is one-shot while commanded power stays 0. */
 export const SILENCE_RENOTIFY_MS = 3 * 60 * 1000;
 export const SILENCE_WATCHDOG_INTERVAL_MS = 5_000;
-export const FLAMEOUT_DELTA_F = 35;
-export const FLAMEOUT_DURATION_MS = 8 * 60 * 1000;
 
 export const KNOWN_GRILL_POST_KEYS = [
   "GrillId",
@@ -228,7 +225,6 @@ export const DANGER_TOKENS = ["FIRE", "FLAMEOUT", "FLAME OUT", "TIMEOUT", "TIME 
 
 export const POWER_FAILSAFE_LABELS: Record<PowerFailSafeReason, string> = {
   silence: "grill silent / Web Ctrl lost",
-  flameout: "software flameout",
   danger: "danger flag",
   "offline-off": "grill reported OFF after a long gap",
 };
