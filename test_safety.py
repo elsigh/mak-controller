@@ -17,8 +17,6 @@ import app  # noqa: E402
 def _reset():
     app.last_seen_epoch = 0.0
     app.prev_flags = None
-    app.flameout_start_epoch = None
-    app.flameout_triggered = False
     app.at_set_alerted = False
     app.last_alerted_setpoint = None
     app.logged_online = False
@@ -46,12 +44,14 @@ def _reset():
 
 
 class HelperTests(unittest.TestCase):
-    def test_watches_silence_for_on_cool_or_session_not_cold_off(self):
-        self.assertTrue(app.should_watch_silence(1, "ON", False))
-        self.assertTrue(app.should_watch_silence(1, "COOL", False))
-        self.assertTrue(app.should_watch_silence(1, "OFF", True))
-        self.assertFalse(app.should_watch_silence(1, "OFF", False))
-        self.assertFalse(app.should_watch_silence(0, "ON", True))
+    def test_watches_silence_only_when_last_power_was_on(self):
+        self.assertTrue(app.should_watch_silence(1, "ON"))
+        self.assertTrue(app.should_watch_silence(1, " on "))
+        self.assertFalse(app.should_watch_silence(1, "COOL"))
+        self.assertFalse(app.should_watch_silence(1, "COOLDOWN"))
+        self.assertFalse(app.should_watch_silence(1, "CD"))
+        self.assertFalse(app.should_watch_silence(1, "OFF"))
+        self.assertFalse(app.should_watch_silence(0, "ON"))
 
     def test_sustained_silence_is_30s(self):
         last = 1_000_000.0
@@ -93,7 +93,7 @@ class FailSafeBehaviorTests(unittest.TestCase):
     def tearDown(self):
         self.notify_patch.stop()
 
-    def test_silence_watchdog_forces_power_zero_and_renotifies(self):
+    def test_silence_watchdog_forces_power_zero_once(self):
         t0 = 20_000_000.0
         app.process_grill_post({"GrillId": "TEST1", "Temp": "350", "Power": "ON"}, t0)
         app.tick_silence_watchdog(t0 + app.SILENCE_THRESHOLD_S - 1)
@@ -107,31 +107,81 @@ class FailSafeBehaviorTests(unittest.TestCase):
         self.assertEqual(self.alerts[0]["title"], "MAK Grill: grill silent / Web Ctrl lost")
         self.assertEqual(self.alerts[0]["priority"], "urgent")
 
+        # Still silent well past the old 3-minute re-nag interval: one alert only.
         app.tick_silence_watchdog(t0 + app.SILENCE_THRESHOLD_S + 5)
+        app.tick_silence_watchdog(t0 + app.SILENCE_THRESHOLD_S + 180)
+        app.tick_silence_watchdog(t0 + app.SILENCE_THRESHOLD_S + 600)
         self.assertEqual(len(self.alerts), 1)
-        app.tick_silence_watchdog(t0 + app.SILENCE_THRESHOLD_S + app.SILENCE_RENOTIFY_S)
-        self.assertEqual(len(self.alerts), 2)
+        self.assertEqual(app.grill_command["power"], 0)
+        self.assertEqual(app.power_failsafe, "silence")
 
-    def test_software_flameout_alerts_without_commanding_power_zero(self):
-        app.grill_command["setPoint"] = 250
-        t0 = 21_000_000.0
-        t = t0
-        while t < t0 + app.FLAMEOUT_DURATION_S:
-            body = app.process_grill_post({"GrillId": "TEST1", "Temp": "200", "Power": "ON"}, t)
-            self.assertIn("power=1", body)
-            self.assertFalse(app.flameout_triggered)
-            t += 10
+    def test_silence_already_off_does_not_notify(self):
+        t0 = 20_500_000.0
+        app.process_grill_post({"GrillId": "TEST1", "Temp": "350", "Power": "ON"}, t0)
+        app.grill_command["power"] = 0
+        app.tick_silence_watchdog(t0 + app.SILENCE_THRESHOLD_S)
+        app.tick_silence_watchdog(t0 + app.SILENCE_THRESHOLD_S + 180)
+        self.assertEqual(self.alerts, [])
+        self.assertEqual(app.grill_command["power"], 0)
+        self.assertIsNone(app.power_failsafe)
 
-        later = t0 + app.FLAMEOUT_DURATION_S
-        body = app.process_grill_post({"GrillId": "TEST1", "Temp": "200", "Power": "ON"}, later)
-        self.assertIn("power=1", body)
-        self.assertTrue(app.flameout_triggered)
+    def test_silence_skipped_for_cool_cd_cooldown_and_off(self):
+        t0 = 20_800_000.0
+        for reported in ("COOL", "COOLDOWN", "CD", "OFF"):
+            _reset()
+            self.alerts.clear()
+            app.process_grill_post({"GrillId": "TEST1", "Temp": "300", "Power": "ON"}, t0)
+            app.process_grill_post(
+                {"GrillId": "TEST1", "Temp": "180", "Power": reported},
+                t0 + 5,
+            )
+            app.grill_command["power"] = 1
+            app.power_failsafe = None
+            app.tick_silence_watchdog(t0 + 5 + app.SILENCE_THRESHOLD_S)
+            app.tick_silence_watchdog(t0 + 5 + app.SILENCE_THRESHOLD_S + 180)
+            self.assertEqual(app.grill_command["power"], 1, reported)
+            self.assertIsNone(app.power_failsafe, reported)
+            self.assertEqual(self.alerts, [], reported)
+
+    def test_active_session_does_not_watch_silence_when_off(self):
+        t0 = 20_900_000.0
+        app.process_grill_post({"GrillId": "TEST1", "Temp": "300", "Power": "ON"}, t0)
+        app.process_grill_post({"GrillId": "TEST1", "Temp": "80", "Power": "OFF"}, t0 + 5)
+        with app.get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO sessions (name, started_at, active) VALUES (?, ?, 1)",
+                ("Test cook", "2026-09-23 00:00:00"),
+            )
+            conn.commit()
+        self.assertIsNotNone(app.get_active_session_id())
+        app.grill_command["power"] = 1
+        app.power_failsafe = None
+        app.tick_silence_watchdog(t0 + 5 + app.SILENCE_THRESHOLD_S)
         self.assertEqual(app.grill_command["power"], 1)
         self.assertIsNone(app.power_failsafe)
-        self.assertEqual(len(self.alerts), 1)
-        self.assertEqual(self.alerts[0]["title"], "MAK Grill Flameout Warning!")
-        self.assertEqual(self.alerts[0]["priority"], "urgent")
-        self.assertIn("does not shut the grill down", self.alerts[0]["message"])
+        self.assertEqual(self.alerts, [])
+        with app.get_db_connection() as conn:
+            conn.execute("UPDATE sessions SET active = 0")
+            conn.commit()
+
+    def test_low_pit_temp_is_not_a_soft_flameout(self):
+        app.grill_command["setPoint"] = 250
+        t0 = 21_000_000.0
+        body = None
+        for step in range(61):
+            body = app.process_grill_post(
+                {"GrillId": "TEST1", "Temp": "180", "Power": "ON"},
+                t0 + step * 10,
+            )
+        self.assertIn("power=1", body)
+        self.assertEqual(app.grill_command["power"], 1)
+        self.assertIsNone(app.power_failsafe)
+        self.assertEqual(self.alerts, [])
+        status = self.client.get("/api/status").get_json()
+        self.assertNotIn("flameout_alert", status)
+        page = self.client.get("/")
+        self.assertNotIn(b"alertFlameout", page.data)
+        self.assertNotIn(b"FLAMEOUT WARNING", page.data)
 
     def test_unseen_off_grill_is_not_started_with_default_power_one(self):
         body = app.process_grill_post({"GrillId": "TEST1", "Temp": "80", "Power": "OFF"})
@@ -208,7 +258,6 @@ class FailSafeBehaviorTests(unittest.TestCase):
             )
             self.assertEqual(app.grill_command["power"], 1)
             self.assertIsNone(app.power_failsafe)
-            self.assertFalse(app.flameout_triggered)
         self.assertEqual(self.alerts, [])
 
     def test_cool_does_not_undo_failsafe_hold(self):

@@ -24,23 +24,18 @@ app = Flask(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", "cooks.db")
 
-# Safety fail-safe thresholds (Web Ctrl silence / pellet-dump incident)
+# Safety fail-safe thresholds (Web Ctrl silence / pellet-dump incident).
+# Pit-temperature "soft flameout" is intentionally not monitored: lid-open
+# dips false-trip it and commanding power=0 starts cooldown, which dumps pellets.
 ONLINE_WINDOW_S = 15.0
 SILENCE_THRESHOLD_S = 30.0
-SILENCE_RENOTIFY_S = 180.0
 SILENCE_WATCHDOG_INTERVAL_S = 5.0
-FLAMEOUT_DELTA_F = 35
-FLAMEOUT_DURATION_S = 480
 DANGER_TOKENS = ("FIRE", "FLAMEOUT", "FLAME OUT", "TIMEOUT", "TIME OUT")
 
 state_lock = threading.Lock()
 
 last_seen_epoch = 0.0
 prev_flags = None
-
-# Flameout Watchdog State
-flameout_start_epoch = None
-flameout_triggered = False
 
 # Silence / danger fail-safe state
 logged_online = False
@@ -320,14 +315,15 @@ def contains_danger_token(*texts):
     haystack = " ".join(str(t or "") for t in texts).upper()
     return any(token in haystack for token in DANGER_TOKENS)
 
-def is_active_cook_power(reported):
-    upper = (reported or "").upper()
-    return upper == "ON" or "COOL" in upper or upper == "CD"
+def should_watch_silence(last_seen, last_power):
+    """Alert and command power=0 only when the grill last reported Power=ON.
 
-def should_watch_silence(last_seen, last_power, session_active):
+    COOLDOWN, COOL, CD, and OFF are skipped. An active cook session does not
+    widen this: a silent cooldown or a cold OFF grill must not be forced off.
+    """
     if last_seen <= 0:
         return False
-    return bool(session_active) or is_active_cook_power(last_power)
+    return (last_power or "").strip().upper() == "ON"
 
 def is_sustained_silence(last_seen, now, threshold=SILENCE_THRESHOLD_S):
     return last_seen > 0 and (now - last_seen) >= threshold
@@ -433,30 +429,29 @@ def tick_silence_watchdog(now=None):
         if not is_sustained_silence(last_seen_epoch, now):
             return
 
-        session_active = False
-        try:
-            session_active = get_active_session_id() is not None
-        except Exception:
-            session_active = False
-
-        if not should_watch_silence(last_seen_epoch, grill_state["power"], session_active):
+        if not should_watch_silence(last_seen_epoch, grill_state["power"]):
             return
 
         silent_for = now - last_seen_epoch
-        force_power_off(
-            "silence",
-            "Silence fail-safe: no grill POST for %.0fs while last Power=%s; commanding power=0 so the next poll requests cooldown."
-            % (silent_for, grill_state["power"]),
-        )
-
-        if silence_notified_at == 0 or (now - silence_notified_at) >= SILENCE_RENOTIFY_S:
-            silence_notified_at = now
-            send_push_notification(
-                "MAK Grill: grill silent / Web Ctrl lost",
-                "No POST for %.0fs. Last Power=%s. Commanded power set to 0."
-                % (silent_for, grill_state["power"]),
-                "urgent",
+        # One-shot: commanded power already 0 means do not notify again while
+        # this silence continues (no 3-minute re-nag).
+        already_off = grill_command["power"] == 0
+        if not already_off:
+            force_power_off(
+                "silence",
+                "Silence fail-safe: no grill POST for %.0fs while last Power=ON; commanding power=0."
+                % silent_for,
             )
+        if already_off or silence_notified_at != 0:
+            return
+
+        silence_notified_at = now
+        send_push_notification(
+            "MAK Grill: grill silent / Web Ctrl lost",
+            "No POST for %.0fs. Last Power=ON. Commanded power set to 0."
+            % silent_for,
+            "urgent",
+        )
 
 # --- Frontend HTML / JS ---
 
@@ -511,7 +506,6 @@ HTML_TEMPLATE = """
         .btn-cooldown { background: #ef6c00; border-color: #f57c00; color: #fff; font-weight: bold; }
         
         .alert-bar { background: #b71c1c; color: #fff; text-align: center; padding: 8px; border-radius: 6px; margin-bottom: 16px; font-weight: bold; font-size: 0.9rem; }
-        .flameout-bar { background: #ff6f00; color: #000; text-align: center; padding: 10px; border-radius: 6px; margin-bottom: 16px; font-weight: bold; font-size: 0.95rem; }
         .chart-container { position: relative; height: 320px; width: 100%; }
         
         .preset-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 12px; }
@@ -568,9 +562,6 @@ HTML_TEMPLATE = """
 
         <div id="alertLost" class="alert-bar" style="display: none;">
             CONNECTION LOST &mdash; Grill polling timed out
-        </div>
-        <div id="alertFlameout" class="flameout-bar" style="display: none;">
-            ⚠️ FLAMEOUT WARNING &mdash; Pit temp dropped &gt;35°F below setpoint for 8+ minutes. Heat is still commanded on &mdash; this watchdog does not start cooldown. Check the lid / fire.
         </div>
         <div id="alertFailsafe" class="alert-bar" style="display: none;">
             SAFETY HOLD &mdash; commanded power=0 until you turn the grill on
@@ -1145,7 +1136,6 @@ HTML_TEMPLATE = """
                 document.getElementById('lastSeen').innerText = data.state.last_seen;
                 document.getElementById('dispFlags').innerText = data.state.flags || 'None';
 
-                document.getElementById('alertFlameout').style.display = data.flameout_alert ? 'block' : 'none';
                 const failsafeBar = document.getElementById('alertFailsafe');
                 if (data.power_failsafe) {
                     failsafeBar.style.display = 'block';
@@ -1386,7 +1376,7 @@ def dashboard():
 
 def process_grill_post(form, now=None):
     """Apply inbound grill telemetry and return the quoted command string."""
-    global last_seen_epoch, prev_flags, flameout_start_epoch, flameout_triggered
+    global last_seen_epoch, prev_flags
     global at_set_alerted, last_alerted_setpoint
     if now is None:
         now = time.time()
@@ -1476,40 +1466,11 @@ def process_grill_post(form, now=None):
             if pit_temp is not None and setpoint is not None and pit_temp < (setpoint - 15):
                 at_set_alerted = False
 
-        # 5. Danger tokens in GrillFlags / Power
+        # 5. Danger tokens in GrillFlags / Power (firmware FIRE/FLAMEOUT/TIMEOUT).
+        #    Pit-vs-setpoint soft flameout is not evaluated here.
         evaluate_danger_flags()
 
-        # 6. Flameout Watchdog (alert only — lid-open dips must not force cooldown)
-        reported_pwr = grill_state["power"].upper()
-        if reported_pwr == "ON" and pit_temp is not None and setpoint is not None:
-            if pit_temp < (setpoint - FLAMEOUT_DELTA_F):
-                if flameout_start_epoch is None:
-                    flameout_start_epoch = now
-                elif (now - flameout_start_epoch) >= FLAMEOUT_DURATION_S:
-                    if not flameout_triggered:
-                        flameout_triggered = True
-                        logger.warning(
-                            "[ALARM] Flameout detected! Pit temp dropped to %s°F (Setpoint: %s°F). Alert only; not commanding power=0.",
-                            pit_temp,
-                            setpoint,
-                        )
-                        send_push_notification(
-                            "MAK Grill Flameout Warning!",
-                            (
-                                f"Pit temp dropped to {pit_temp}°F (Setpoint: {setpoint}°F). "
-                                "Heat is still commanded on — check the lid / fire. "
-                                "This watchdog does not shut the grill down."
-                            ),
-                            "urgent",
-                        )
-            else:
-                flameout_start_epoch = None
-                flameout_triggered = False
-        else:
-            flameout_start_epoch = None
-            flameout_triggered = False
-
-        # 7. Outbound command: hold fail-safes; otherwise reset after COOL/OFF
+        # 6. Outbound command: hold fail-safes; otherwise reset after COOL/OFF
         apply_power_reconnect_policy(previous_seen, now)
         return encode_grill_response()
 
@@ -1552,7 +1513,6 @@ def get_status():
         "active_session": active_session,
         "probe_targets": probe_targets,
         "probe_alerts": probe_alerted,
-        "flameout_alert": flameout_triggered,
         "power_failsafe": power_failsafe is not None,
         "power_failsafe_reason": power_failsafe,
         "at_set": "ATSET" in grill_state["flags"].upper(),
@@ -1855,9 +1815,8 @@ if os.environ.get("MAK_SKIP_WATCHDOG") != "1":
     )
     _watchdog_thread.start()
     logger.info(
-        "Silence watchdog started (threshold=%.0fs, renotify=%.0fs, interval=%.0fs)",
+        "Silence watchdog started (threshold=%.0fs, interval=%.0fs, ON-only, one-shot)",
         SILENCE_THRESHOLD_S,
-        SILENCE_RENOTIFY_S,
         SILENCE_WATCHDOG_INTERVAL_S,
     )
 

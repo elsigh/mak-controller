@@ -23,12 +23,12 @@ This service acts as a drop-in replacement for the original cloud backend (`makg
    </p>
 * **Probe Alerts & Web Audio:** Set target internal temperatures for Probes 1–3 with visual pulsing cards and browser-based audio chimes.
 * **Safety Watchdogs:**
-  * **Flameout Detection:** Urgent ntfy + on-screen alert when pit temperature falls >35°F below the target setpoint for longer than 8 consecutive minutes while running. Does **not** command `power=0` — lid-open pit dips false-trigger this watchdog and auto-cooldown can overload the firepot.
-  * **Silence Watchdog:** If last reported Power was ON/COOL (or a cook session is active) and no grill POST arrives for **30 seconds**, send an urgent ntfy alert and command `power=0`. Re-notify every **3 minutes** until polls resume.
+  * **Silence Watchdog:** If the last reported Power was **ON** and no grill POST arrives for **30 seconds**, send one urgent ntfy alert and command `power=0`. `COOLDOWN`, `COOL`, `CD`, and `OFF` are skipped (an active cook session does not override that). One-shot: if commanded power is already `0`, do not notify again while the grill stays silent — there is no 3-minute re-nag.
   * **Danger flags:** Tokens `FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, or `TIME OUT` in `GrillFlags` or `Power` command `power=0` and send an urgent ntfy alert.
-  * **Long-gap OFF hold:** After 30+ seconds of silence, if the grill reports `OFF`, do not answer with `power=1` unless the operator turns power on in the UI/API. Fail-safe `power=0` stays latched until that explicit turn-on (the normal COOL/OFF → reset-to-1 path does not undo it).
+  * **Long-gap OFF hold:** After 30+ seconds of silence, if the grill reports `OFF`, do not answer with `power=1` unless the operator explicitly turns power on in the UI/API. Fail-safe `power=0` stays latched until that explicit turn-on (the normal COOL/OFF → reset-to-1 path does not undo it).
   * **Cooldown Interlock:** Respects the Pellet Boss fan-assisted cooldown cycle, locking out premature restarts until shutdown completes.
-* **Push Notifications:** Native integration with [ntfy](https://ntfy.sh/) for probe target completions, stage transitions, target setpoint confirmations (`ATSET`), flameout warnings, silence, and danger flags.
+  * Pit temperature below setpoint is **not** a watchdog. A lid-open dip used to look like a software flameout; commanding `power=0` from that path starts cooldown and can dump pellets into the firepot.
+* **Push Notifications:** Native integration with [ntfy](https://ntfy.sh/) for probe target completions, stage transitions, target setpoint confirmations (`ATSET`), silence, and danger flags.
 * **Persistent Cook Sessions:** Log individual cooks into a persistent SQLite database with one-click CSV export and maintenance pruning tools.
 * **Production-Ready Backend:** Runs via Gunicorn multi-threaded WSGI with SQLite Write-Ahead Logging (`WAL` mode) for reliable concurrency.
 
