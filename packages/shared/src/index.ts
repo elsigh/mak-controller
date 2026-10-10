@@ -53,12 +53,6 @@ export interface AutomationStatus {
   current_stage: RecipeStage | null;
 }
 
-/**
- * Why commanded power is latched at 0. Silence is deliberately NOT a reason:
- * grill Wi-Fi drops are normal, so silence only ever sends an ntfy alert.
- */
-export type PowerFailSafeReason = "danger" | "offline-off";
-
 /** Result of the most recent ntfy publish attempt (any alert). */
 export interface NtfyAlertStatus {
   /** ISO timestamp when the send started. */
@@ -80,8 +74,6 @@ export interface StatusResponse {
   active_session: CookSession | null;
   probe_targets: Record<ProbeKey, number | null>;
   probe_alerts: Record<ProbeKey, boolean>;
-  power_failsafe: boolean;
-  power_failsafe_reason: PowerFailSafeReason | null;
   /** True while the current silence episode has been alerted (grill silent while last Power was ON). */
   silence_alerted: boolean;
   /** Whether an ntfy topic is configured on the bridge. */
@@ -247,11 +239,6 @@ export const KNOWN_GRILL_POST_KEYS = [
 
 export const DANGER_TOKENS = ["FIRE", "FLAMEOUT", "FLAME OUT", "TIMEOUT", "TIME OUT"] as const;
 
-export const POWER_FAILSAFE_LABELS: Record<PowerFailSafeReason, string> = {
-  danger: "danger flag",
-  "offline-off": "grill was off/cooling when the bridge (re)connected",
-};
-
 export const DEFAULT_COMMAND: GrillCommand = {
   setPoint: 175,
   potStatus: "",
@@ -362,12 +349,13 @@ export function isOfflinePower(reported: string): boolean {
   return reported.toUpperCase() === "OFF";
 }
 
-export function shouldResetCommandedPower(
-  commandedPower: number,
-  reported: string,
-  holdOff = false,
-): boolean {
-  if (holdOff) return false;
+/**
+ * After a user-initiated power=0 (cooldown / power off), once the grill
+ * acknowledges with COOL/CD/OFF, reset commanded power to 1 (upstream
+ * behavior). This is the only automatic power transition and it only ever
+ * moves 0 → 1; MakGrill never automatically answers power=0.
+ */
+export function shouldResetCommandedPower(commandedPower: number, reported: string): boolean {
   return commandedPower === 0 && (isCooldownPower(reported) || isOfflinePower(reported));
 }
 
@@ -383,11 +371,6 @@ export function isActiveCookPower(reported: string): boolean {
 export function containsDangerToken(text: string): boolean {
   const upper = text.toUpperCase();
   return DANGER_TOKENS.some((token) => upper.includes(token));
-}
-
-export function describePowerFailSafe(reason: PowerFailSafeReason | null | undefined): string {
-  if (!reason) return "";
-  return POWER_FAILSAFE_LABELS[reason] ?? reason;
 }
 
 /** Watch silence only when the last POST reported Power ON. Skip COOLDOWN/COOL/CD/OFF. */
@@ -406,24 +389,6 @@ export function isSustainedSilence(
   thresholdMs = SILENCE_THRESHOLD_MS,
 ): boolean {
   return lastSeenEpoch > 0 && now - lastSeenEpoch >= thresholdMs;
-}
-
-/**
- * After a long offline gap, an OFF report must not be answered with power=1
- * unless the user explicitly turned power on via UI/API. The first poll after
- * a bridge (re)start (offlineGapMs = Infinity) also holds a COOLDOWN report,
- * so a deploy never auto-sends power=1 to a grill that is shutting down.
- * A grill reporting ON is never held.
- */
-export function shouldHoldPowerOffAfterGap(input: {
-  offlineGapMs: number;
-  reportedPower: string;
-  pendingExplicitPowerOn: boolean;
-}): boolean {
-  if (input.pendingExplicitPowerOn) return false;
-  if (isReportedOn(input.reportedPower)) return false;
-  if (input.offlineGapMs === Number.POSITIVE_INFINITY && isCooldownPower(input.reportedPower)) return true;
-  return input.offlineGapMs >= SILENCE_THRESHOLD_MS && isOfflinePower(input.reportedPower);
 }
 
 export function unknownGrillPostKeys(

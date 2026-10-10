@@ -29,18 +29,19 @@ Upstream: https://github.com/bawilson2/mak-controller (Apache-2.0)
   - `cookMode` (const `1`)
   - `zoneProbe` (const `1`)
   - `power` (`1` = on/allow, `0` = request shutdown/cooldown)
-- After a **user-initiated** `power=0`, when the grill reports `COOL` / `CD` / `OFF`, reset commanded power back to `1` — except after a fail-safe latch or a ≥30s offline gap that reports `OFF`. Those stay at `power=0` until the user explicitly turns power on via UI/API.
+- After a **user-initiated** `power=0`, when the grill reports `COOL` / `CD` / `OFF`, reset commanded power back to `1` (upstream behavior).
+- **The bridge never automatically answers `power=0`.** The only source of `power=0` is that explicit user action (UI/API cooldown / power off). Silence, long offline gaps, the first poll after a bridge restart and Pellet Boss danger flags never change commanded power — the grill's own controller decides what to do.
 
 ## Online heuristic
 
 Grill is online if the last POST was less than 15 seconds ago.
 
-## Safety fail-safes (2026-09-20 Web Ctrl blackout)
+## Safety alerts (2026-09-20 Web Ctrl blackout; alert-only since 2026-10-10)
 
-Two-stage silence policy (alert-only) and Pellet Boss danger-token holds.
+Two-stage silence policy and Pellet Boss danger-token alerts. Both are alert-only.
 MakGrill does not watch pit temperature against setpoint for a software flameout
 (the former 35°F-below-setpoint / 8 minute rule). Lid-open dips false-triggered
-that watchdog. Flameout shutdown relies on Pellet Boss danger flags only.
+that watchdog. Flameout handling is left to the Pellet Boss itself.
 A background watchdog (`setInterval` every 5s) watches `lastSeenEpoch` even when
 `handleGrillPost` is not running — silence is invisible if we only look inside
 the POST handler.
@@ -52,10 +53,8 @@ the POST handler.
 
 - Only one silence ntfy per episode. When polls resume, a default-priority "grill back online" note is sent and the latch resets. A grill that reconnects reporting `ON` is answered with `power=1` and the current commanded setpoint.
 - Every ntfy publish attempt is logged with its HTTP result and retried with backoff (2s, 4s, 8s) on network errors, 429 and 5xx. `/internal/status` exposes `last_alert` (time, title, ok, status, error, attempts) and `ntfy_configured`; the About page shows both. The bridge logs an ERROR at startup when no topic is configured.
-- If `GrillFlags` or `Power` contains danger tokens (case-insensitive): `FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, `TIME OUT` → `power=0` + urgent ntfy. A low pit versus setpoint does not.
-- After a gap ≥30s, if the grill reports `OFF` (or, on the first poll after a bridge start, `COOLDOWN`), do **not** answer with `power=1` unless the user explicitly turns power on via UI/API. Default/latched `power=1` must not restart a firmware-shutdown grill. This hold never applies to a grill reporting `ON`, and a grill that reports `ON` while held releases it.
-- Fail-safe `power=0` is latched until that explicit UI/API power-on. The normal COOL/OFF → reset-to-1 path does not undo a latch.
-- Reconnect setpoint adoption (below) is unchanged and can run on the same poll as a power hold.
+- If `GrillFlags` or `Power` contains danger tokens (case-insensitive): `FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, `TIME OUT` → one urgent ntfy `"MakGrill: danger flag"` per episode (re-arms once the token clears) and a WARN log. **Commanded power is not changed**; the Pellet Boss handles its own faults. A low pit versus setpoint does nothing.
+- There is no power fail-safe or long-gap hold (removed 2026-10-10). After any gap — including the first poll after a bridge restart — the grill is answered with the current commanded power, which is `1` unless the user explicitly requested shutdown.
 
 Online→offline and offline→online transitions are logged with timestamps. Unknown POST form keys are logged once.
 

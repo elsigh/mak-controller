@@ -1,6 +1,6 @@
 "use client";
 
-import { describePowerFailSafe, localCalendarDay, type HistoryResponse, type StatusResponse } from "@makgrill/shared";
+import { localCalendarDay, type HistoryResponse, type StatusResponse } from "@makgrill/shared";
 import { AlertCircleIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStatus } from "@/hooks/use-status";
@@ -48,16 +48,6 @@ export function Dashboard({
               {" "}
               Wi-Fi gaps are normal: MakGrill never changes heat because the grill went quiet. After 30 seconds of
               silence while the grill is ON you get one urgent push notification.
-            </AlertDescription>
-          </Alert>
-        )}
-        {status?.power_failsafe && status.is_online && (
-          <Alert variant="destructive" className="rounded-2xl px-4 py-3">
-            <AlertCircleIcon />
-            <AlertTitle>Heat command held at 0</AlertTitle>
-            <AlertDescription>
-              MakGrill is answering power=0 ({describePowerFailSafe(status.power_failsafe_reason)}). Tap Turn on to
-              resume heat.
             </AlertDescription>
           </Alert>
         )}

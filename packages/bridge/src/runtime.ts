@@ -6,7 +6,6 @@ import {
   clampSetpoint,
   computeCooldown,
   computeOnline,
-  isReportedOn,
   containsDangerToken,
   encodeGrillResponse,
   formatLocalStamp,
@@ -14,7 +13,6 @@ import {
   isSustainedSilence,
   parseNumber,
   shouldAdoptPitSetpoint,
-  shouldHoldPowerOffAfterGap,
   shouldResetCommandedPower,
   shouldWatchSilence,
   unknownGrillPostKeys,
@@ -23,7 +21,6 @@ import type {
   AutomationStatus,
   GrillCommand,
   GrillState,
-  PowerFailSafeReason,
   ProbeKey,
   RecipeStage,
   StatusResponse,
@@ -68,7 +65,6 @@ export class GrillRuntime {
   private loggedOnline = false;
   /** Set once per silence episode after the urgent ntfy; cleared on the next POST. */
   private silenceAlertedAt = 0;
-  private powerFailSafe: PowerFailSafeReason | null = null;
   private dangerAlerted = false;
   private seenUnknownKeys = new Set<string>();
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
@@ -134,8 +130,8 @@ export class GrillRuntime {
    * inside the POST handler — this is what the 2026-09-20 blackout needed.
    *
    * Silence is ALERT-ONLY: one urgent ntfy per silence episode while the last
-   * POST reported Power ON. It never changes commanded power or latches a
-   * fail-safe — grill Wi-Fi drops are normal (2026-10-10: a routine 31s gap
+   * POST reported Power ON. It never changes commanded power — grill Wi-Fi
+   * drops are normal (2026-10-10: a routine 31s gap
    * used to force power=0 and put a live cook into COOLDOWN).
    */
   tickWatchdog(now = Date.now()) {
@@ -162,7 +158,7 @@ export class GrillRuntime {
 
     // One alert per silence episode.
     if (this.silenceAlertedAt > 0) return;
-    // A user/danger shutdown is already in progress; silence adds nothing.
+    // A user-initiated shutdown is already in progress; silence adds nothing.
     if (this.command.power === 0) return;
 
     const silentFor = now - this.lastSeenEpoch;
@@ -176,15 +172,6 @@ export class GrillRuntime {
       `No update from the grill for ${Math.round(silentFor / 1000)}s (last Power=${this.state.power}, pit ${this.state.temp}°F, setpoint ${this.command.setPoint}°F). MakGrill did NOT change power — the grill keeps cooking on its own. Check grill Wi-Fi / Web Ctrl.`,
       "urgent",
     );
-  }
-
-  private forcePowerOff(reason: PowerFailSafeReason, message: string) {
-    const alreadyHeld = this.command.power === 0 && this.powerFailSafe === reason;
-    this.command.power = 0;
-    this.powerFailSafe = reason;
-    if (!alreadyHeld) {
-      log("WARN", message);
-    }
   }
 
   private logUnknownFormKeys(form: Record<string, string>) {
@@ -255,7 +242,7 @@ export class GrillRuntime {
     this.evaluateProbeAlarms();
     this.evaluateAtSet(pitTemp, setpoint);
     this.evaluateDangerFlags();
-    this.applyPowerReconnectPolicy(previousSeen, now);
+    this.applyCooldownAcknowledgement();
 
     return encodeGrillResponse(this.command);
   }
@@ -282,37 +269,19 @@ export class GrillRuntime {
     this.silenceAlertedAt = 0;
   }
 
-  private applyPowerReconnectPolicy(previousSeen: number, now: number) {
-    const offlineGapMs = previousSeen === 0 ? Number.POSITIVE_INFINITY : now - previousSeen;
-    const holdAfterGap = shouldHoldPowerOffAfterGap({
-      offlineGapMs,
-      reportedPower: this.state.power,
-      pendingExplicitPowerOn: this.pendingExplicitPowerOn,
-    });
-
+  /**
+   * MakGrill NEVER automatically answers power=0. The only path to commanded
+   * power=0 is an explicit UI/API setPower(0) (cooldown / power off). Once the
+   * grill acknowledges that with COOL/CD/OFF, reset the command to 1 (upstream
+   * behavior). Long gaps, first polls after a restart and danger flags do not
+   * touch power — the grill's own firmware decides what to do.
+   */
+  private applyCooldownAcknowledgement() {
     if (this.pendingExplicitPowerOn) {
       this.pendingExplicitPowerOn = false;
       return;
     }
-
-    if (holdAfterGap) {
-      this.forcePowerOff(
-        "offline-off",
-        `Long offline gap (${offlineGapMs === Number.POSITIVE_INFINITY ? "first poll since bridge start" : `${offlineGapMs}ms`}) and grill reports ${this.state.power}; holding commanded power at 0 until explicit UI/API power-on.`,
-      );
-      return;
-    }
-
-    // The long-gap hold must never turn off a grill that is running: if the
-    // grill reports ON (e.g. relit at the panel), release it and allow heat.
-    if (this.powerFailSafe === "offline-off" && isReportedOn(this.state.power)) {
-      log("INFO", "Grill reports ON; releasing long-gap power hold and answering power=1.");
-      this.powerFailSafe = null;
-      this.command.power = 1;
-      return;
-    }
-
-    if (shouldResetCommandedPower(this.command.power, this.state.power, this.powerFailSafe !== null)) {
+    if (shouldResetCommandedPower(this.command.power, this.state.power)) {
       log("INFO", `Cooldown acknowledged by grill (${this.state.power}). Resetting power command to 1.`);
       this.command.power = 1;
     }
@@ -464,13 +433,15 @@ export class GrillRuntime {
     }
     if (this.dangerAlerted) return;
     this.dangerAlerted = true;
-    this.forcePowerOff(
-      "danger",
-      `[ALARM] Danger token in GrillFlags/Power ('${this.state.flags}' / '${this.state.power}'). Commanding power=0.`,
+    // Alert-only: the Pellet Boss handles its own faults. MakGrill must never
+    // answer power=0 on its own (2026-10-10 decision).
+    log(
+      "WARN",
+      `[ALARM] Danger token in GrillFlags/Power ('${this.state.flags}' / '${this.state.power}'). Alerting only; commanded power left at ${this.command.power}.`,
     );
     this.notify(
       "MakGrill: danger flag",
-      `GrillFlags='${this.state.flags}' Power='${this.state.power}'. Commanded power set to 0.`,
+      `GrillFlags='${this.state.flags}' Power='${this.state.power}', pit ${this.state.temp}°F. MakGrill did NOT change power — the grill's controller handles its own faults. Check the grill.`,
       "urgent",
     );
   }
@@ -482,13 +453,6 @@ export class GrillRuntime {
   }
 
   setPower(state: 0 | 1): { ok: boolean; error?: string; power: number } {
-    if (state === 1 && this.powerFailSafe) {
-      log("INFO", `Clearing power fail-safe (${this.powerFailSafe}) after explicit UI/API power-on.`);
-      this.powerFailSafe = null;
-      this.pendingExplicitPowerOn = true;
-      this.command.power = 1;
-      return { ok: true, power: 1 };
-    }
     const status = this.getStatus();
     if (status.is_cooldown && state === 1) {
       return { ok: false, error: "Grill is cooling down", power: this.command.power };
@@ -575,8 +539,6 @@ export class GrillRuntime {
       active_session: getActiveSession(),
       probe_targets: { ...this.probeTargets },
       probe_alerts: { ...this.probeAlerted },
-      power_failsafe: this.powerFailSafe !== null,
-      power_failsafe_reason: this.powerFailSafe,
       silence_alerted: this.silenceAlertedAt > 0,
       ntfy_configured: this.ntfyTopic.trim() !== "",
       last_alert: getLastNtfyAlert(),
