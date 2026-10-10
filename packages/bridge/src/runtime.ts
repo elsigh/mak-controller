@@ -6,6 +6,7 @@ import {
   clampSetpoint,
   computeCooldown,
   computeOnline,
+  isReportedOn,
   containsDangerToken,
   encodeGrillResponse,
   formatLocalStamp,
@@ -39,7 +40,7 @@ import {
   startSession,
   stopActiveSession,
 } from "./db.ts";
-import { sendNtfy } from "./ntfy.ts";
+import { getLastNtfyAlert, sendNtfy } from "./ntfy.ts";
 
 const PROBES: ProbeKey[] = ["probe1", "probe2", "probe3"];
 
@@ -65,7 +66,8 @@ export class GrillRuntime {
   private pendingExplicitPowerOn = false;
   private prevFlags: string | null = null;
   private loggedOnline = false;
-  private silenceNotifiedAt = 0;
+  /** Set once per silence episode after the urgent ntfy; cleared on the next POST. */
+  private silenceAlertedAt = 0;
   private powerFailSafe: PowerFailSafeReason | null = null;
   private dangerAlerted = false;
   private seenUnknownKeys = new Set<string>();
@@ -130,6 +132,11 @@ export class GrillRuntime {
   /**
    * Independent of handleGrillPost. Silence is invisible if we only look
    * inside the POST handler — this is what the 2026-09-20 blackout needed.
+   *
+   * Silence is ALERT-ONLY: one urgent ntfy per silence episode while the last
+   * POST reported Power ON. It never changes commanded power or latches a
+   * fail-safe — grill Wi-Fi drops are normal (2026-10-10: a routine 31s gap
+   * used to force power=0 and put a live cook into COOLDOWN).
    */
   tickWatchdog(now = Date.now()) {
     const online = computeOnline(this.lastSeenEpoch, now);
@@ -153,20 +160,20 @@ export class GrillRuntime {
       return;
     }
 
-    // Web Ctrl already off (or a previous silence trip): do not re-notify on an interval.
-    if (this.command.power === 0) {
-      return;
-    }
+    // One alert per silence episode.
+    if (this.silenceAlertedAt > 0) return;
+    // A user/danger shutdown is already in progress; silence adds nothing.
+    if (this.command.power === 0) return;
 
     const silentFor = now - this.lastSeenEpoch;
-    this.forcePowerOff(
-      "silence",
-      `Silence fail-safe: no grill POST for ${silentFor}ms while last Power=${this.state.power}; commanding power=0 so the next poll requests cooldown.`,
+    this.silenceAlertedAt = now;
+    log(
+      "WARN",
+      `Silence alert: no grill POST for ${silentFor}ms while last Power=${this.state.power}. Sending urgent ntfy; commanded power left at ${this.command.power}.`,
     );
-    this.silenceNotifiedAt = now;
     this.notify(
-      "MakGrill: grill silent / Web Ctrl lost",
-      `No POST for ${Math.round(silentFor / 1000)}s. Last Power=${this.state.power}. Commanded power set to 0.`,
+      "MakGrill: grill not reporting",
+      `No update from the grill for ${Math.round(silentFor / 1000)}s (last Power=${this.state.power}, pit ${this.state.temp}°F, setpoint ${this.command.setPoint}°F). MakGrill did NOT change power — the grill keeps cooking on its own. Check grill Wi-Fi / Web Ctrl.`,
       "urgent",
     );
   }
@@ -263,7 +270,16 @@ export class GrillRuntime {
       );
     }
     this.loggedOnline = true;
-    this.silenceNotifiedAt = 0;
+    if (this.silenceAlertedAt > 0) {
+      const silentSec = Math.round((now - previousSeen) / 1000);
+      log("INFO", `Silence episode over: grill back after ${silentSec}s (Power=${this.state.power}).`);
+      this.notify(
+        "MakGrill: grill back online",
+        `Grill reporting again after ${silentSec}s. Power=${this.state.power}, pit ${this.state.temp}°F.`,
+        "default",
+      );
+    }
+    this.silenceAlertedAt = 0;
   }
 
   private applyPowerReconnectPolicy(previousSeen: number, now: number) {
@@ -282,8 +298,17 @@ export class GrillRuntime {
     if (holdAfterGap) {
       this.forcePowerOff(
         "offline-off",
-        `Long offline gap (${offlineGapMs === Number.POSITIVE_INFINITY ? "never seen" : `${offlineGapMs}ms`}) and grill reports OFF; holding commanded power at 0 until explicit UI/API power-on.`,
+        `Long offline gap (${offlineGapMs === Number.POSITIVE_INFINITY ? "first poll since bridge start" : `${offlineGapMs}ms`}) and grill reports ${this.state.power}; holding commanded power at 0 until explicit UI/API power-on.`,
       );
+      return;
+    }
+
+    // The long-gap hold must never turn off a grill that is running: if the
+    // grill reports ON (e.g. relit at the panel), release it and allow heat.
+    if (this.powerFailSafe === "offline-off" && isReportedOn(this.state.power)) {
+      log("INFO", "Grill reports ON; releasing long-gap power hold and answering power=1.");
+      this.powerFailSafe = null;
+      this.command.power = 1;
       return;
     }
 
@@ -552,6 +577,9 @@ export class GrillRuntime {
       probe_alerts: { ...this.probeAlerted },
       power_failsafe: this.powerFailSafe !== null,
       power_failsafe_reason: this.powerFailSafe,
+      silence_alerted: this.silenceAlertedAt > 0,
+      ntfy_configured: this.ntfyTopic.trim() !== "",
+      last_alert: getLastNtfyAlert(),
       at_set: this.state.flags.toUpperCase().includes("ATSET"),
       automation,
       grill_name: resolveStoredGrillDisplayName(this.state.grill_id),

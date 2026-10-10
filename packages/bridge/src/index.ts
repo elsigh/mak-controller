@@ -9,6 +9,11 @@ import { GrillRuntime } from "./runtime.ts";
 
 const topic = initDb(config.ntfyTopic);
 const runtime = new GrillRuntime(topic);
+if (!topic.trim()) {
+  log("ERROR", "!!! NO NTFY TOPIC CONFIGURED: silence, danger and probe alerts will NOT reach your phone. Set NTFY_TOPIC in .env or Settings → ntfy topic. !!!");
+} else {
+  log("INFO", `ntfy alerts go to topic '${topic.trim()}'${config.ntfyTopic ? "" : " (from saved settings; NTFY_TOPIC env is empty)"}.`);
+}
 runtime.startWatchdog();
 
 const app = new Hono();

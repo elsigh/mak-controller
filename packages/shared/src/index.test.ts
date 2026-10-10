@@ -157,6 +157,27 @@ describe("online and cooldown heuristics", () => {
 });
 
 describe("silence and danger fail-safes", () => {
+  it("never holds power off for a grill reporting ON; holds COOLDOWN only on the first poll after start", () => {
+    for (const gap of [0, SILENCE_THRESHOLD_MS, Number.POSITIVE_INFINITY]) {
+      assert.equal(
+        shouldHoldPowerOffAfterGap({ offlineGapMs: gap, reportedPower: "ON", pendingExplicitPowerOn: false }),
+        false,
+      );
+    }
+    assert.equal(
+      shouldHoldPowerOffAfterGap({
+        offlineGapMs: Number.POSITIVE_INFINITY,
+        reportedPower: "COOLDOWN",
+        pendingExplicitPowerOn: false,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldHoldPowerOffAfterGap({ offlineGapMs: 31_000, reportedPower: "COOLDOWN", pendingExplicitPowerOn: false }),
+      false,
+    );
+  });
+
   it("watches silence only when last Power was ON, not cooldown or OFF", () => {
     assert.equal(
       shouldWatchSilence({ lastSeenEpoch: 1, lastReportedPower: "ON", sessionActive: false }),

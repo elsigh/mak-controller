@@ -10,7 +10,6 @@ process.env.BRIDGE_PORT = "0";
 
 const {
   ONLINE_WINDOW_MS,
-  SILENCE_RENOTIFY_MS,
   SILENCE_THRESHOLD_MS,
 } = await import("@makgrill/shared");
 const { getGrillNames, getSetting, initDb, setGrillDisplayName } = await import("./db.ts");
@@ -179,7 +178,7 @@ describe("GrillRuntime safety fail-safes", () => {
     initDb("");
   });
 
-  it("sets commanded power to 0 after 30s of silence while last Power was ON", () => {
+  it("silence while ON sends one urgent ntfy and NEVER changes commanded power", () => {
     const alerts: Array<{ title: string; priority?: string }> = [];
     const runtime = new GrillRuntime("", {
       notify: (title, _message, priority) => alerts.push({ title, priority }),
@@ -187,23 +186,64 @@ describe("GrillRuntime safety fail-safes", () => {
     const t0 = 20_000_000;
     runtime.handleGrillPost({ GrillId: "TEST1", Temp: "350", Power: "ON" }, t0);
     runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS - 1);
-    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS - 1).command.power, 1);
-    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS - 1).power_failsafe, false);
+    assert.equal(alerts.length, 0);
 
     runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS);
     const status = runtime.getStatus(t0 + SILENCE_THRESHOLD_MS);
-    assert.equal(status.command.power, 0);
-    assert.equal(status.power_failsafe, true);
-    assert.equal(status.power_failsafe_reason, "silence");
+    assert.equal(status.command.power, 1);
+    assert.equal(status.power_failsafe, false);
+    assert.equal(status.power_failsafe_reason, null);
+    assert.equal(status.silence_alerted, true);
     assert.equal(alerts.length, 1);
-    assert.equal(alerts[0]?.title, "MakGrill: grill silent / Web Ctrl lost");
+    assert.equal(alerts[0]?.title, "MakGrill: grill not reporting");
     assert.equal(alerts[0]?.priority, "urgent");
 
-    runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS + 5_000);
+    // Hours of silence: still one alert, still power=1.
+    for (let t = t0 + SILENCE_THRESHOLD_MS + 5_000; t <= t0 + 3 * 60 * 60 * 1000; t += 5_000) {
+      runtime.tickWatchdog(t);
+    }
     assert.equal(alerts.length, 1);
-    runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS);
-    assert.equal(alerts.length, 1);
-    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS).command.power, 0);
+    assert.equal(runtime.getStatus(t0 + 3 * 60 * 60 * 1000).command.power, 1);
+    assert.equal(runtime.getStatus(t0 + 3 * 60 * 60 * 1000).power_failsafe, false);
+  });
+
+  it("replays the 2026-10-10 incident: a 31s Wi-Fi gap keeps the cook running", () => {
+    const alerts: Array<{ title: string; priority?: string }> = [];
+    const runtime = new GrillRuntime("", {
+      notify: (title, _message, priority) => alerts.push({ title, priority }),
+    });
+    const t0 = 30_000_000;
+    runtime.setSetpoint(175);
+    // Healthy 4s polls, then the grill goes quiet for 31s (09:40:44 → 09:41:15 PT).
+    for (let t = t0; t <= t0 + 60_000; t += 4_000) {
+      runtime.handleGrillPost({ GrillId: "TEST1", Temp: "175", Power: "ON" }, t);
+    }
+    const lastPost = t0 + 60_000;
+    for (let t = lastPost + 5_000; t < lastPost + 31_000; t += 5_000) runtime.tickWatchdog(t);
+    runtime.tickWatchdog(lastPost + 30_500);
+    assert.equal(alerts.length, 1, "one urgent silence alert");
+    assert.equal(alerts[0]?.priority, "urgent");
+
+    const reconnect = runtime.handleGrillPost(
+      { GrillId: "TEST1", Temp: "170", Power: "ON" },
+      lastPost + 31_000,
+    );
+    assert.match(reconnect, /power=1"$/);
+    assert.equal(alerts.length, 2);
+    assert.equal(alerts[1]?.title, "MakGrill: grill back online");
+    assert.equal(alerts[1]?.priority, "default");
+    const status = runtime.getStatus(lastPost + 31_000);
+    assert.equal(status.command.power, 1);
+    assert.equal(status.power_failsafe, false);
+    assert.equal(status.silence_alerted, false);
+
+    const next = runtime.handleGrillPost({ GrillId: "TEST1", Temp: "170", Power: "ON" }, lastPost + 35_000);
+    assert.match(next, /power=1"$/);
+
+    // A second silence episode alerts again.
+    runtime.tickWatchdog(lastPost + 35_000 + SILENCE_THRESHOLD_MS);
+    assert.equal(alerts.length, 3);
+    assert.equal(alerts[2]?.title, "MakGrill: grill not reporting");
   });
 
   it("does not silence-alert or force power when last Power was cooldown/cool/cd/off", () => {
@@ -218,7 +258,7 @@ describe("GrillRuntime safety fail-safes", () => {
       runtime.tickWatchdog(t0 + 5_000 + SILENCE_THRESHOLD_MS);
       const status = runtime.getStatus(t0 + 5_000 + SILENCE_THRESHOLD_MS);
       assert.equal(alerts.length, 0, `unexpected silence ntfy for Power=${power}`);
-      assert.notEqual(status.power_failsafe_reason, "silence");
+      assert.equal(status.silence_alerted, false);
     }
   });
 
@@ -236,13 +276,13 @@ describe("GrillRuntime safety fail-safes", () => {
     );
     assert.match(cool, /power=1/);
     runtime.tickWatchdog(t0 + 5_000 + SILENCE_THRESHOLD_MS);
-    runtime.tickWatchdog(t0 + 5_000 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS);
+    runtime.tickWatchdog(t0 + 5_000 + SILENCE_THRESHOLD_MS + 180_000);
     assert.equal(alerts.length, 0);
-    const status = runtime.getStatus(t0 + 5_000 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS);
-    assert.notEqual(status.power_failsafe_reason, "silence");
+    const status = runtime.getStatus(t0 + 5_000 + SILENCE_THRESHOLD_MS + 180_000);
+    assert.equal(status.silence_alerted, false);
   });
 
-  it("does not re-notify when commanded power is already 0 while still silent", () => {
+  it("does not silence-alert when the user already commanded power=0", () => {
     const alerts: string[] = [];
     const runtime = new GrillRuntime("", {
       notify: (title) => alerts.push(title),
@@ -252,9 +292,9 @@ describe("GrillRuntime safety fail-safes", () => {
     runtime.setPower(0);
     runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS);
     assert.equal(alerts.length, 0);
-    runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS);
+    runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS + 180_000);
     assert.equal(alerts.length, 0);
-    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + SILENCE_RENOTIFY_MS).command.power, 0);
+    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + 180_000).command.power, 0);
   });
 
   it("does not alert or change power when pit stays 35°F+ under setpoint", () => {
@@ -376,8 +416,8 @@ describe("GrillRuntime safety fail-safes", () => {
     assert.equal(alerts.length, 0);
   });
 
-  it("adopts pit setpoint on reconnect while keeping a silence power hold", () => {
-    const runtime = new GrillRuntime("");
+  it("adopts pit setpoint on reconnect after silence and answers power=1", () => {
+    const runtime = new GrillRuntime("", { notify: () => {} });
     const t0 = 25_000_000;
     runtime.setSetpoint(350);
     runtime.handleGrillPost({ GrillId: "TEST1", Temp: "350", Power: "ON" }, t0);
@@ -386,20 +426,53 @@ describe("GrillRuntime safety fail-safes", () => {
       { GrillId: "TEST1", Temp: "365", Power: "ON" },
       t0 + SILENCE_THRESHOLD_MS + 1,
     );
-    assert.equal(reconnect, '"setPoint=365&potStatus=&cookMode=1&zoneProbe=1&power=0"');
-    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + 1).power_failsafe, true);
+    assert.equal(reconnect, '"setPoint=365&potStatus=&cookMode=1&zoneProbe=1&power=1"');
+    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + 1).power_failsafe, false);
   });
 
-  it("does not let COOL/OFF reset undo a fail-safe power hold", () => {
-    const runtime = new GrillRuntime("");
+  it("does not let COOL/OFF reset undo a danger power hold", () => {
+    const runtime = new GrillRuntime("", { notify: () => {} });
     const t0 = 26_000_000;
-    runtime.handleGrillPost({ GrillId: "TEST1", Temp: "350", Power: "ON" }, t0);
-    runtime.tickWatchdog(t0 + SILENCE_THRESHOLD_MS);
+    runtime.handleGrillPost({ GrillId: "TEST1", Temp: "350", Power: "ON", GrillFlags: "FLAMEOUT" }, t0);
     const cool = runtime.handleGrillPost(
       { GrillId: "TEST1", Temp: "200", Power: "COOL" },
-      t0 + SILENCE_THRESHOLD_MS + 5_000,
+      t0 + 5_000,
     );
     assert.match(cool, /power=0/);
-    assert.equal(runtime.getStatus(t0 + SILENCE_THRESHOLD_MS + 5_000).command.power, 0);
+    assert.equal(runtime.getStatus(t0 + 5_000).command.power, 0);
+    assert.equal(runtime.getStatus(t0 + 5_000).power_failsafe_reason, "danger");
+  });
+
+  it("holds power=0 on the first poll after a bridge restart when the grill is in COOLDOWN", () => {
+    const runtime = new GrillRuntime("");
+    const t0 = 31_000_000;
+    const first = runtime.handleGrillPost({ GrillId: "TEST1", Temp: "150", Power: "COOLDOWN" }, t0);
+    assert.match(first, /power=0/);
+    const status = runtime.getStatus(t0);
+    assert.equal(status.power_failsafe_reason, "offline-off");
+    assert.match(
+      runtime.handleGrillPost({ GrillId: "TEST1", Temp: "145", Power: "COOLDOWN" }, t0 + 4_000),
+      /power=0/,
+    );
+    // Lindsey taps Turn on.
+    assert.equal(runtime.setPower(1).ok, true);
+    assert.match(
+      runtime.handleGrillPost({ GrillId: "TEST1", Temp: "145", Power: "COOLDOWN" }, t0 + 8_000),
+      /power=1/,
+    );
+  });
+
+  it("never answers power=0 to a grill reporting ON because of the long-gap hold", () => {
+    const runtime = new GrillRuntime("");
+    const t0 = 32_000_000;
+    // First poll after restart: OFF → held.
+    assert.match(runtime.handleGrillPost({ GrillId: "TEST1", Temp: "70", Power: "OFF" }, t0), /power=0/);
+    // Relit at the panel: the hold must release immediately.
+    const lit = runtime.handleGrillPost({ GrillId: "TEST1", Temp: "90", Power: "ON" }, t0 + 4_000);
+    assert.match(lit, /power=1/);
+    assert.equal(runtime.getStatus(t0 + 4_000).power_failsafe, false);
+    // First poll after restart already ON → power=1.
+    const fresh = new GrillRuntime("");
+    assert.match(fresh.handleGrillPost({ GrillId: "TEST1", Temp: "225", Power: "ON" }, t0), /power=1/);
   });
 });

@@ -20,6 +20,15 @@ function display(value: string | number | boolean | null | undefined): string {
   return text === "" ? "—" : text;
 }
 
+function describeLastAlert(alert: StatusResponse["last_alert"] | undefined): string {
+  if (!alert) return "None since bridge start";
+  const when = new Date(alert.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  const result = alert.ok
+    ? `OK (HTTP ${alert.status})`
+    : `FAILED (${alert.error ?? (alert.status ? `HTTP ${alert.status}` : "error")})`;
+  return `${when} · ${alert.title} · ${result}${alert.attempts > 1 ? ` · ${alert.attempts} tries` : ""}`;
+}
+
 function MetaRow({
   label,
   value,
@@ -134,6 +143,19 @@ export function AboutStudio({
               pending={pending}
               mono={false}
             />
+            <MetaRow
+              label="Silence alert"
+              value={status?.silence_alerted ? "Sent (grill silent)" : "No"}
+              pending={pending}
+              mono={false}
+            />
+            <MetaRow
+              label="ntfy topic"
+              value={status ? (status.ntfy_configured ? "Configured" : "MISSING — alerts disabled") : "—"}
+              pending={pending}
+              mono={false}
+            />
+            <MetaRow label="Last alert" value={describeLastAlert(status?.last_alert)} pending={pending} mono={false} />
             <MetaRow
               label="Setpoint"
               value={command ? `${command.setPoint}°F` : "—"}

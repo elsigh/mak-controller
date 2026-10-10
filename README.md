@@ -20,9 +20,9 @@ Do **not** point the grill at Vercel or any serverless endpoint. The grill needs
 ## Features
 
 - Live pit / probes / online / cooldown
-- Silence watchdog: if last Power was ON (active cook) and no POST for 30s, urgent ntfy and `power=0` (one-shot; no repeat while already held at 0). `COOLDOWN` / `COOL` / `CD` / `OFF` are not silence-alerted
+- Silence watchdog (alert-only): if last Power was ON and no POST for 30s, one urgent ntfy per silence episode plus a "back online" note when polls resume. Silence never changes commanded power. `COOLDOWN` / `COOL` / `CD` / `OFF` are not silence-alerted
 - Pellet Boss danger tokens in `GrillFlags`/`Power` (`FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, `TIME OUT`) force `power=0` and urgent ntfy. MakGrill does not watch pit-temp delta for a software flameout
-- After a ≥30s gap, an `OFF` report is not answered with `power=1` unless the user turns power on
+- After a ≥30s gap, an `OFF` report (or a `COOLDOWN` report on the first poll after a bridge restart) is not answered with `power=1` unless the user turns power on. A grill reporting `ON` is never held
 - Setpoint control 150–500°F in 5° steps; shutdown that respects Pellet Boss cooldown
 - Day-grouped cook history (Studio local date, `America/Los_Angeles`) with full-day CSV export
 - Optional [ntfy](https://ntfy.sh/) push (probe done, ATSET, stage advance, silence, danger)
@@ -100,7 +100,7 @@ See [`PROTOCOL.md`](./PROTOCOL.md). Summary:
 
 - Grill POST fields: `GrillId`, `Temp`, `Power`, `Probe1`, `Probe2`, `Probe3`, `GrillFlags`
 - Response is `text/html` and **must** be a quoted query string
-- Online if last POST &lt; 15s; after 30s of silence while last Power was ON, commanded power is force-zeroed (skip COOLDOWN/COOL/CD/OFF; no repeat ntfy if already 0)
+- Online if last POST &lt; 15s; after 30s of silence while last Power was ON, one urgent ntfy (commanded power unchanged; skip COOLDOWN/COOL/CD/OFF)
 - After user-initiated `power=0` the grill reports `COOL`/`CD`/`OFF` and commanded power resets to `1`, unless a fail-safe latch or long-gap `OFF` is holding heat off
 
 ## Safety

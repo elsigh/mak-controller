@@ -45,9 +45,9 @@ export function Dashboard({
             <AlertTitle>Connection lost</AlertTitle>
             <AlertDescription>
               The grill must POST to <code>/GrillService/Service</code> at least every 15 seconds.
-              {status.power_failsafe
-                ? ` Commanded power was force-zeroed (${describePowerFailSafe(status.power_failsafe_reason)}). The next poll will request cooldown.`
-                : " After 30 seconds of silence while last Power was ON, commanded power is force-zeroed."}
+              {" "}
+              Wi-Fi gaps are normal: MakGrill never changes heat because the grill went quiet. After 30 seconds of
+              silence while the grill is ON you get one urgent push notification.
             </AlertDescription>
           </Alert>
         )}
@@ -56,8 +56,8 @@ export function Dashboard({
             <AlertCircleIcon />
             <AlertTitle>Heat command held at 0</AlertTitle>
             <AlertDescription>
-              Commanded power was force-zeroed ({describePowerFailSafe(status.power_failsafe_reason)}
-              ). Turn the grill on from the dashboard to resume heat.
+              MakGrill is answering power=0 ({describePowerFailSafe(status.power_failsafe_reason)}). Tap Turn on to
+              resume heat.
             </AlertDescription>
           </Alert>
         )}

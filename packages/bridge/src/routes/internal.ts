@@ -221,8 +221,14 @@ export function internalRoutes(runtime: GrillRuntime) {
   app.post("/settings/test-ntfy", async (c) => {
     const topic = runtime.getNtfyTopic().trim();
     if (!topic) return c.json({ success: false, error: "No ntfy topic configured" }, 400);
-    await sendNtfy(topic, "MakGrill Test", "If you see this, push notifications are working!");
-    return c.json({ success: true });
+    const body = await c.req.json().catch(() => ({}));
+    const priority = ["min", "low", "default", "high", "urgent"].includes(String(body.priority))
+      ? String(body.priority)
+      : "default";
+    const title = String(body.title ?? "").trim() || "MakGrill Test";
+    const message = String(body.message ?? "").trim() || "If you see this, push notifications are working!";
+    const result = await sendNtfy(topic, title, message, priority);
+    return c.json({ success: result.ok, result }, result.ok ? 200 : 502);
   });
 
   app.post("/maintenance/prune", async (c) => {
