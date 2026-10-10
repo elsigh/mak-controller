@@ -49,7 +49,7 @@ describe("GrillRuntime protocol", () => {
       Probe1: "90",
       GrillFlags: "0",
     });
-    assert.equal(body, '"setPoint=200&potStatus=&cookMode=1&zoneProbe=1&power=1"');
+    assert.equal(body, '"setPoint=175&potStatus=&cookMode=1&zoneProbe=1&power=1"');
     const status = runtime.getStatus();
     assert.equal(status.is_online, true);
     assert.equal(status.state.temp, "200");
@@ -78,33 +78,33 @@ describe("GrillRuntime protocol", () => {
     assert.equal(runtime.getStatus().command.power, 1);
   });
 
-  it("adopts pit setpoint after offline so a stale web buffer cannot trump the panel", () => {
-    const runtime = new GrillRuntime("");
-    const t0 = 1_000_000;
-    runtime.setSetpoint(350);
+  it("never changes the commanded setpoint on reconnect or first poll (no pit adoption)", () => {
+    // First poll after a bridge start: default setpoint, not the pit temp.
+    const fresh = new GrillRuntime("");
     assert.equal(
-      runtime.handleGrillPost({ GrillId: "TEST1", Temp: "348", Power: "ON" }, t0),
-      '"setPoint=350&potStatus=&cookMode=1&zoneProbe=1&power=1"',
+      fresh.handleGrillPost({ GrillId: "TEST1", Temp: "198", Power: "ON" }, 900_000),
+      '"setPoint=175&potStatus=&cookMode=1&zoneProbe=1&power=1"',
     );
 
-    const reconnect = runtime.handleGrillPost(
-      { GrillId: "TEST1", Temp: "365", Power: "ON" },
-      t0 + ONLINE_WINDOW_MS + 1,
+    const runtime = new GrillRuntime("", { notify: () => {} });
+    const t0 = 1_000_000;
+    runtime.setSetpoint(150);
+    assert.equal(
+      runtime.handleGrillPost({ GrillId: "TEST1", Temp: "170", Power: "ON" }, t0),
+      '"setPoint=150&potStatus=&cookMode=1&zoneProbe=1&power=1"',
     );
-    assert.equal(reconnect, '"setPoint=365&potStatus=&cookMode=1&zoneProbe=1&power=1"');
-    assert.equal(runtime.getStatus(t0 + ONLINE_WINDOW_MS + 1).command.setPoint, 365);
-  });
-
-  it("snaps a reconnect pit temp to the nearest valid 5° step", () => {
-    const runtime = new GrillRuntime("");
-    const t0 = 2_000_000;
-    runtime.setSetpoint(350);
-    runtime.handleGrillPost({ GrillId: "TEST1", Temp: "350", Power: "ON" }, t0);
-    const reconnect = runtime.handleGrillPost(
-      { GrillId: "TEST1", Temp: "367", Power: "ON" },
-      t0 + ONLINE_WINDOW_MS + 1,
-    );
-    assert.equal(reconnect, '"setPoint=365&potStatus=&cookMode=1&zoneProbe=1&power=1"');
+    // Short gap, long gap, hours-long gap: setpoint stays 150 whatever the pit reads.
+    let t = t0;
+    for (const gap of [ONLINE_WINDOW_MS + 1, SILENCE_THRESHOLD_MS + 1_000, 3 * 60 * 60 * 1000]) {
+      t += gap;
+      runtime.tickWatchdog(t);
+      assert.equal(
+        runtime.handleGrillPost({ GrillId: "TEST1", Temp: "367", Power: "ON" }, t),
+        '"setPoint=150&potStatus=&cookMode=1&zoneProbe=1&power=1"',
+        `gap ${gap}ms`,
+      );
+      assert.equal(runtime.getStatus(t).command.setPoint, 150);
+    }
   });
 
   it("does not rewrite setpoint from pit wobble while continuously online", () => {
@@ -169,7 +169,7 @@ describe("GrillRuntime protocol", () => {
       { GrillId: "TEST1", Temp: "350", Power: "ON" },
       t0 + ONLINE_WINDOW_MS + 1,
     );
-    assert.equal(reconnect, '"setPoint=350&potStatus=&cookMode=1&zoneProbe=1&power=0"');
+    assert.equal(reconnect, '"setPoint=175&potStatus=&cookMode=1&zoneProbe=1&power=0"');
   });
 });
 
@@ -391,7 +391,7 @@ describe("GrillRuntime never auto-answers power=0", () => {
     assert.equal(alerts.length, 0);
   });
 
-  it("adopts pit setpoint on reconnect after silence and answers power=1", () => {
+  it("keeps the commanded setpoint and answers power=1 on reconnect after silence", () => {
     const runtime = new GrillRuntime("", { notify: () => {} });
     const t0 = 25_000_000;
     runtime.setSetpoint(350);
@@ -401,7 +401,7 @@ describe("GrillRuntime never auto-answers power=0", () => {
       { GrillId: "TEST1", Temp: "365", Power: "ON" },
       t0 + SILENCE_THRESHOLD_MS + 1,
     );
-    assert.equal(reconnect, '"setPoint=365&potStatus=&cookMode=1&zoneProbe=1&power=1"');
+    assert.equal(reconnect, '"setPoint=350&potStatus=&cookMode=1&zoneProbe=1&power=1"');
   });
 
   it("only an explicit setPower(0) produces power=0, and the grill's cooldown ack resets it to 1", () => {

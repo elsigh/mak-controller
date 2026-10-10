@@ -102,6 +102,7 @@ See [`PROTOCOL.md`](./PROTOCOL.md). Summary:
 - Response is `text/html` and **must** be a quoted query string
 - Online if last POST &lt; 15s; after 30s of silence while last Power was ON, one urgent ntfy (commanded power unchanged; skip COOLDOWN/COOL/CD/OFF)
 - After user-initiated `power=0` the grill reports `COOL`/`CD`/`OFF` and commanded power resets to `1`. Nothing else ever sets `power=0`
+- Commanded setpoint changes only via the UI/API or recipe automation; reconnects never change it (in-memory; a bridge restart resets it to the 175°F default)
 
 ## Safety
 

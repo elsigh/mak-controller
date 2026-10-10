@@ -14,7 +14,6 @@ import {
   isValidHistoryDay,
   isValidSetpoint,
   localCalendarDay,
-  shouldAdoptPitSetpoint,
   shouldResetCommandedPower,
   shouldWatchSilence,
   unknownGrillPostKeys,
@@ -87,54 +86,6 @@ describe("online and cooldown heuristics", () => {
     assert.equal(computeOnline(now - 14_000, now), true);
     assert.equal(computeOnline(now - 16_000, now), false);
     assert.equal(computeOnline(0, now), false);
-  });
-
-  it("adopts pit setpoint only on reconnect when nothing else owns it", () => {
-    assert.equal(
-      shouldAdoptPitSetpoint({
-        wasOnline: false,
-        automationActive: false,
-        pendingExplicitSetpoint: false,
-        pitTemp: 365,
-      }),
-      true,
-    );
-    assert.equal(
-      shouldAdoptPitSetpoint({
-        wasOnline: true,
-        automationActive: false,
-        pendingExplicitSetpoint: false,
-        pitTemp: 365,
-      }),
-      false,
-    );
-    assert.equal(
-      shouldAdoptPitSetpoint({
-        wasOnline: false,
-        automationActive: true,
-        pendingExplicitSetpoint: false,
-        pitTemp: 365,
-      }),
-      false,
-    );
-    assert.equal(
-      shouldAdoptPitSetpoint({
-        wasOnline: false,
-        automationActive: false,
-        pendingExplicitSetpoint: true,
-        pitTemp: 365,
-      }),
-      false,
-    );
-    assert.equal(
-      shouldAdoptPitSetpoint({
-        wasOnline: false,
-        automationActive: false,
-        pendingExplicitSetpoint: false,
-        pitTemp: null,
-      }),
-      false,
-    );
   });
 
   it("locks out during COOL/CD and commanded shutdown", () => {

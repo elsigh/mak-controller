@@ -54,24 +54,18 @@ the POST handler.
 - Only one silence ntfy per episode. When polls resume, a default-priority "grill back online" note is sent and the latch resets. A grill that reconnects reporting `ON` is answered with `power=1` and the current commanded setpoint.
 - Every ntfy publish attempt is logged with its HTTP result and retried with backoff (2s, 4s, 8s) on network errors, 429 and 5xx. `/internal/status` exposes `last_alert` (time, title, ok, status, error, attempts) and `ntfy_configured`; the About page shows both. The bridge logs an ERROR at startup when no topic is configured.
 - If `GrillFlags` or `Power` contains danger tokens (case-insensitive): `FIRE`, `FLAMEOUT`, `FLAME OUT`, `TIMEOUT`, `TIME OUT` → one urgent ntfy `"MakGrill: danger flag"` per episode (re-arms once the token clears) and a WARN log. **Commanded power is not changed**; the Pellet Boss handles its own faults. A low pit versus setpoint does nothing.
-- There is no power fail-safe or long-gap hold (removed 2026-10-10). After any gap — including the first poll after a bridge restart — the grill is answered with the current commanded power, which is `1` unless the user explicitly requested shutdown.
+- There is no power fail-safe or long-gap hold (removed 2026-10-10). After any gap — including the first poll after a bridge restart — the grill is answered with the current commanded power, which is `1` unless the user explicitly requested shutdown, and the current commanded setpoint (unchanged by the reconnect).
 
 Online→offline and offline→online transitions are logged with timestamps. Unknown POST form keys are logged once.
 
-## Reconnect setpoint adoption
+## Setpoint ownership
 
-Grill POSTs do not include the local panel setpoint. After the grill has been
-offline (last POST outside the 15s window, including the first poll after
-bridge boot), the bridge adopts `clampSetpoint(pit Temp)` so a stale web
-command buffer cannot overwrite a panel change when Web Ctrl comes back.
-
-Exceptions:
-- Active recipe automation keeps driving setpoint
-- A UI/API setpoint set since the last poll (pending, never delivered) is honored
-- Missing/invalid pit Temp: keep the command buffer
-
-Power command is unchanged on reconnect. Pit wobble while continuously online
-does not rewrite setpoint.
+The commanded `setPoint` changes **only** through an explicit UI/API setpoint
+or active recipe automation. A reconnect (short gap, long gap, or the first
+poll after a bridge restart) never changes it, and it is never derived from
+pit `Temp` (the former reconnect pit-temp adoption was removed 2026-10-10).
+The commanded setpoint lives in bridge memory and is not persisted, so a
+bridge restart resets it to the default (`175°F`) until the user sets one.
 
 ## Human control
 

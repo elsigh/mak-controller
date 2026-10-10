@@ -12,7 +12,6 @@ import {
   HISTORY_CHART_DOWNSAMPLE_SECONDS,
   isSustainedSilence,
   parseNumber,
-  shouldAdoptPitSetpoint,
   shouldResetCommandedPower,
   shouldWatchSilence,
   unknownGrillPostKeys,
@@ -57,8 +56,6 @@ export class GrillRuntime {
   private command: GrillCommand = { ...DEFAULT_COMMAND };
   private state: GrillState = { ...DEFAULT_STATE };
   private lastSeenEpoch = 0;
-  /** True after setSetpoint until the command is delivered on a grill poll. */
-  private pendingExplicitSetpoint = false;
   /** True after an explicit UI/API power-on until the next grill poll delivers it. */
   private pendingExplicitPowerOn = false;
   private prevFlags: string | null = null;
@@ -204,7 +201,8 @@ export class GrillRuntime {
     bindProvisionalGrillName(this.state.grill_id);
 
     const pitTemp = parseNumber(this.state.temp);
-    this.maybeAdoptSetpointOnReconnect(wasOnline, pitTemp);
+    // The commanded setpoint is NEVER derived from grill reports (no pit-temp
+    // adoption on reconnect). Only setSetpoint and recipe automation change it.
     this.lastSeenEpoch = now;
     this.notePollResumed(wasOnline, previousSeen, now);
 
@@ -285,52 +283,6 @@ export class GrillRuntime {
       log("INFO", `Cooldown acknowledged by grill (${this.state.power}). Resetting power command to 1.`);
       this.command.power = 1;
     }
-  }
-
-  private maybeAdoptSetpointOnReconnect(wasOnline: boolean, pitTemp: number | null) {
-    if (wasOnline) {
-      this.pendingExplicitSetpoint = false;
-      return;
-    }
-
-    if (
-      pitTemp !== null &&
-      shouldAdoptPitSetpoint({
-        wasOnline,
-        automationActive: this.automation.active,
-        pendingExplicitSetpoint: this.pendingExplicitSetpoint,
-        pitTemp,
-      })
-    ) {
-      const previous = this.command.setPoint;
-      const adopted = clampSetpoint(pitTemp);
-      this.command.setPoint = adopted;
-      const origin = this.lastSeenEpoch === 0 ? "never seen" : "offline";
-      log(
-        "INFO",
-        `Adopting pit-based setpoint on reconnect: ${previous}°F → ${adopted}°F (pit ${pitTemp}°F; grill was ${origin}).`,
-      );
-      return;
-    }
-
-    if (this.automation.active) {
-      log(
-        "INFO",
-        `Reconnect: keeping command setpoint ${this.command.setPoint}°F because recipe automation is active.`,
-      );
-    } else if (this.pendingExplicitSetpoint) {
-      log(
-        "INFO",
-        `Reconnect: keeping pending UI/API setpoint ${this.command.setPoint}°F (set while grill was offline).`,
-      );
-    } else if (pitTemp === null) {
-      log(
-        "INFO",
-        `Reconnect: no valid pit temp; keeping command setpoint ${this.command.setPoint}°F.`,
-      );
-    }
-
-    this.pendingExplicitSetpoint = false;
   }
 
   private evaluateAutomation(now: number) {
@@ -448,7 +400,6 @@ export class GrillRuntime {
 
   setSetpoint(temp: number): GrillCommand {
     this.command.setPoint = clampSetpoint(temp);
-    this.pendingExplicitSetpoint = true;
     return this.command;
   }
 
