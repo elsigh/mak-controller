@@ -1,4 +1,5 @@
 import path from "node:path";
+import { parseUncommandedReplyMode } from "@makgrill/shared";
 
 function env(name: string, fallback = ""): string {
   return process.env[name] ?? fallback;
@@ -12,6 +13,8 @@ export const config = {
   ntfyTopic: env("NTFY_TOPIC", ""),
   webOrigin: env("WEB_ORIGIN", ""),
   logLevel: env("LOG_LEVEL", "INFO").toUpperCase(),
+  /** hold (default) | omit | legacy. See PROTOCOL.md "Setpoint ownership". */
+  uncommandedReply: parseUncommandedReplyMode(env("UNCOMMANDED_REPLY", "hold")),
 };
 
 export function log(level: "DEBUG" | "INFO" | "WARN" | "ERROR", message: string, extra?: unknown) {

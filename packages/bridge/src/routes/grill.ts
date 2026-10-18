@@ -11,6 +11,11 @@ export function grillRoutes(runtime: GrillRuntime) {
       if (typeof value === "string") form[key] = value;
     }
     const payload = runtime.handleGrillPost(form);
+    if (payload === null) {
+      // No command for the grill (no app setpoint this cook): reply like a
+      // briefly unavailable server so the grill keeps its panel setpoint.
+      return c.body(null, 503, { "Content-Type": "text/html", "Cache-Control": "no-store" });
+    }
     return c.body(payload, 200, { "Content-Type": "text/html" });
   });
 

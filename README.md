@@ -57,7 +57,7 @@ npm test
 npm run smoke
 ```
 
-The smoke test starts a temporary bridge, POSTs as a grill, changes the setpoint through the internal API, and asserts the **next** GrillService body is:
+The smoke test starts a temporary bridge, POSTs as a grill (expects `503` with no command, since no setpoint is set yet), changes the setpoint through the internal API, and asserts the **next** GrillService body is:
 
 ```
 "setPoint=225&potStatus=&cookMode=1&zoneProbe=1&power=1"
@@ -102,7 +102,7 @@ See [`PROTOCOL.md`](./PROTOCOL.md). Summary:
 - Response is `text/html` and **must** be a quoted query string
 - Online if last POST &lt; 15s; after 30s of silence while last Power was ON, one urgent ntfy (commanded power unchanged; skip COOLDOWN/COOL/CD/OFF)
 - After user-initiated `power=0` the grill reports `COOL`/`CD`/`OFF` and commanded power resets to `1`. Nothing else ever sets `power=0`
-- Commanded setpoint changes only via the UI/API or recipe automation; reconnects never change it (in-memory; a bridge restart resets it to the 175°F default)
+- The grill never reports its own setpoint, so the bridge sends none until you set one in the app (or start a recipe) for the current cook: by default it answers `503` with no command (`UNCOMMANDED_REPLY=hold`) and the grill keeps its panel setpoint. Turning on Web Ctrl or restarting the bridge never overwrites the panel. Once set, reconnects never change it; a new cook (START, back from OFF/cooldown, or 30+ min silence) drops the old cook's setpoint
 
 ## Safety
 

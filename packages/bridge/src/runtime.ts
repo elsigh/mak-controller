@@ -7,7 +7,9 @@ import {
   computeCooldown,
   computeOnline,
   containsDangerToken,
+  detectNewCook,
   encodeGrillResponse,
+  encodeGrillResponseWithoutSetpoint,
   formatLocalStamp,
   HISTORY_CHART_DOWNSAMPLE_SECONDS,
   isSustainedSilence,
@@ -23,6 +25,7 @@ import type {
   ProbeKey,
   RecipeStage,
   StatusResponse,
+  UncommandedReplyMode,
 } from "@makgrill/shared";
 import { log } from "./config.ts";
 import {
@@ -50,6 +53,8 @@ interface AutomationState {
 
 export interface GrillRuntimeOptions {
   notify?: (title: string, message: string, priority?: string) => void;
+  /** Reply while no setpoint is commanded. Default `hold` (HTTP 503, no command). */
+  uncommandedReply?: UncommandedReplyMode;
 }
 
 export class GrillRuntime {
@@ -86,10 +91,18 @@ export class GrillRuntime {
     stages: [],
   };
   private ntfyTopic = "";
+  private readonly uncommandedReply: UncommandedReplyMode;
+  /** When the commanded setpoint was last set by the user/API or a recipe stage. */
+  private setpointSetAt = 0;
+  /** When the current recipe was started. */
+  private automationStartedAt = 0;
+  /** Logged once per grill session while answering without a setpoint. */
+  private loggedUncommanded = false;
 
   constructor(ntfyTopic = "", options: GrillRuntimeOptions = {}) {
     this.ntfyTopic = ntfyTopic;
     this.notifyOverride = options.notify;
+    this.uncommandedReply = options.uncommandedReply ?? "hold";
   }
 
   setNtfyTopic(topic: string) {
@@ -166,7 +179,7 @@ export class GrillRuntime {
     );
     this.notify(
       "MakGrill: grill not reporting",
-      `No update from the grill for ${Math.round(silentFor / 1000)}s (last Power=${this.state.power}, pit ${this.state.temp}°F, setpoint ${this.command.setPoint}°F). MakGrill did NOT change power — the grill keeps cooking on its own. Check grill Wi-Fi / Web Ctrl.`,
+      `No update from the grill for ${Math.round(silentFor / 1000)}s (last Power=${this.state.power}, pit ${this.state.temp}°F, setpoint ${this.command.setPoint === null ? "set on grill" : `${this.command.setPoint}°F`}). MakGrill did NOT change power — the grill keeps cooking on its own. Check grill Wi-Fi / Web Ctrl.`,
       "urgent",
     );
   }
@@ -182,10 +195,17 @@ export class GrillRuntime {
     return formatLocalStamp(now);
   }
 
-  handleGrillPost(form: Record<string, string>, now = Date.now()): string {
+  /**
+   * Handle one grill POST. Returns the quoted reply body, or `null` when the
+   * bridge has no command for the grill (no app setpoint for this cook and
+   * UNCOMMANDED_REPLY=hold); the route then answers HTTP 503 with no body so
+   * the grill keeps the setpoint from its own panel.
+   */
+  handleGrillPost(form: Record<string, string>, now = Date.now()): string | null {
     this.logUnknownFormKeys(form);
     const clock = new Date(now);
     const previousSeen = this.lastSeenEpoch;
+    const previousPower = previousSeen > 0 ? this.state.power : null;
     const wasOnline = computeOnline(previousSeen, now);
 
     this.state = {
@@ -200,9 +220,18 @@ export class GrillRuntime {
     };
     bindProvisionalGrillName(this.state.grill_id);
 
+    const newCook = detectNewCook({
+      previousPower,
+      previousSeenEpoch: previousSeen,
+      power: this.state.power,
+      now,
+    });
+    if (newCook) this.beginGrillCook(newCook, previousSeen);
+
     const pitTemp = parseNumber(this.state.temp);
     // The commanded setpoint is NEVER derived from grill reports (no pit-temp
-    // adoption on reconnect). Only setSetpoint and recipe automation change it.
+    // adoption on reconnect). Only setSetpoint and recipe automation set it;
+    // a new cook (beginGrillCook) only ever clears it to "not commanding".
     this.lastSeenEpoch = now;
     this.notePollResumed(wasOnline, previousSeen, now);
 
@@ -242,7 +271,60 @@ export class GrillRuntime {
     this.evaluateDangerFlags();
     this.applyCooldownAcknowledgement();
 
-    return encodeGrillResponse(this.command);
+    return this.encodeReply();
+  }
+
+  /**
+   * A new cook started (first poll since bridge start, fresh START, back from
+   * OFF/cooldown, or a NEW_COOK_GAP_MS silence). An app setpoint or recipe from
+   * the previous cook is dropped so it is never pushed onto this one; the
+   * bridge then stops commanding a setpoint and the grill keeps its panel
+   * value. A setpoint/recipe chosen after the last poll (while the grill was
+   * away) is the user's intent for this cook and is kept. Power is untouched.
+   */
+  private beginGrillCook(reason: string, previousSeen: number) {
+    this.loggedUncommanded = false;
+    if (this.automation.active && this.automationStartedAt <= previousSeen) {
+      log("INFO", `New grill cook (${reason}): stopping recipe '${this.automation.name}' from the previous cook.`);
+      this.stopAutomation();
+    }
+    if (this.command.setPoint !== null && this.setpointSetAt <= previousSeen) {
+      log(
+        "INFO",
+        `New grill cook (${reason}): dropping previous cook's setpoint ${this.command.setPoint}°F; not commanding a setpoint until one is set in the app.`,
+      );
+      this.command.setPoint = null;
+    } else if (this.command.setPoint === null) {
+      log("INFO", `New grill cook (${reason}): no app setpoint yet; the grill keeps its panel setpoint.`);
+    }
+  }
+
+  /**
+   * With an app setpoint, the full quoted command. Without one, never a made-up
+   * temperature: by default no command at all (null → HTTP 503). An explicit
+   * user power-off is always delivered as a full reply (FALLBACK_SETPOINT is
+   * only the wire placeholder; the grill is shutting down).
+   */
+  private encodeReply(): string | null {
+    if (this.command.setPoint !== null || this.command.power === 0) {
+      return encodeGrillResponse(this.command);
+    }
+    if (!this.loggedUncommanded) {
+      this.loggedUncommanded = true;
+      log(
+        "INFO",
+        `No app setpoint for this cook (UNCOMMANDED_REPLY=${this.uncommandedReply}): ${
+          this.uncommandedReply === "hold"
+            ? "answering HTTP 503 with no command so the grill keeps its panel setpoint"
+            : this.uncommandedReply === "omit"
+              ? "answering without a setPoint key"
+              : "answering the legacy setPoint=175 placeholder (overwrites the panel)"
+        }.`,
+      );
+    }
+    if (this.uncommandedReply === "legacy") return encodeGrillResponse(this.command);
+    if (this.uncommandedReply === "omit") return encodeGrillResponseWithoutSetpoint(this.command);
+    return null;
   }
 
   private notePollResumed(wasOnline: boolean, previousSeen: number, now: number) {
@@ -298,6 +380,7 @@ export class GrillRuntime {
     if (this.automation.stageStartedEpoch === null) {
       this.automation.stageStartedEpoch = now;
       this.command.setPoint = clampSetpoint(Number(current.setpoint));
+      this.setpointSetAt = now;
       const msg = `Started ${current.name || `Stage ${stageIdx + 1}`}: SetPoint set to ${this.command.setPoint}°F`;
       log("INFO", `[AUTOMATION] ${msg}`);
       this.notify(`Automation: ${current.name || `Stage ${stageIdx + 1}`}`, msg);
@@ -326,6 +409,7 @@ export class GrillRuntime {
       this.automation.stageStartedEpoch = now;
       const next = stages[nextIdx];
       this.command.setPoint = clampSetpoint(Number(next.setpoint));
+      this.setpointSetAt = now;
       const msg = `Stage ${stageIdx + 1} complete. Advancing to '${next.name || `Stage ${nextIdx + 1}`}' @ ${this.command.setPoint}°F`;
       log("INFO", `[AUTOMATION] ${msg}`);
       this.notify("Automation: Stage Advance", msg, "high");
@@ -358,6 +442,7 @@ export class GrillRuntime {
   }
 
   private evaluateAtSet(pitTemp: number | null, setpoint: number | null) {
+    const target = setpoint === null ? "the grill's own setpoint" : `setpoint of ${setpoint}°F`;
     if (setpoint !== this.lastAlertedSetpoint) {
       this.atSetAlerted = false;
     }
@@ -366,11 +451,8 @@ export class GrillRuntime {
       if (!this.atSetAlerted) {
         this.atSetAlerted = true;
         this.lastAlertedSetpoint = setpoint;
-        log("INFO", `[NOTIFICATION] Pit reached setpoint (${setpoint}°F)`);
-        this.notify(
-          "MakGrill: Target Temp Reached",
-          `Pit reached setpoint of ${setpoint}°F (Current: ${pitTemp}°F).`,
-        );
+        log("INFO", `[NOTIFICATION] Pit reached ${target}`);
+        this.notify("MakGrill: Target Temp Reached", `Pit reached ${target} (Current: ${pitTemp}°F).`);
       }
     } else if (pitTemp !== null && setpoint !== null && pitTemp < setpoint - 15) {
       this.atSetAlerted = false;
@@ -398,9 +480,12 @@ export class GrillRuntime {
     );
   }
 
-  setSetpoint(temp: number): GrillCommand {
-    this.command.setPoint = clampSetpoint(temp);
-    return this.command;
+  /** The user's app/API setpoint: from here on the bridge commands it every poll. */
+  setSetpoint(temp: number, now = Date.now()): GrillCommand & { setPoint: number } {
+    const setPoint = clampSetpoint(temp);
+    this.command.setPoint = setPoint;
+    this.setpointSetAt = now;
+    return { ...this.command, setPoint };
   }
 
   setPower(state: 0 | 1): { ok: boolean; error?: string; power: number } {
@@ -419,7 +504,8 @@ export class GrillRuntime {
     return { probe, target };
   }
 
-  startAutomation(name: string, stages: RecipeStage[]) {
+  startAutomation(name: string, stages: RecipeStage[], now = Date.now()) {
+    this.automationStartedAt = now;
     this.automation = {
       active: true,
       name,
@@ -435,14 +521,15 @@ export class GrillRuntime {
     this.automation.stageStartedEpoch = null;
   }
 
-  skipAutomationStage() {
+  skipAutomationStage(now = Date.now()) {
     if (!this.automation.active) return;
     const nextIdx = this.automation.stageIdx + 1;
     if (nextIdx < this.automation.stages.length) {
       this.automation.stageIdx = nextIdx;
-      this.automation.stageStartedEpoch = Date.now();
+      this.automation.stageStartedEpoch = now;
       const next = this.automation.stages[nextIdx];
       this.command.setPoint = clampSetpoint(Number(next.setpoint));
+      this.setpointSetAt = now;
     } else {
       this.automation.active = false;
     }
@@ -484,7 +571,7 @@ export class GrillRuntime {
 
     return {
       state: this.state,
-      command: this.command,
+      command: { ...this.command },
       is_online: isOnline,
       is_cooldown: computeCooldown(isOnline, this.state.power, this.command.power),
       active_session: getActiveSession(),
@@ -496,6 +583,7 @@ export class GrillRuntime {
       at_set: this.state.flags.toUpperCase().includes("ATSET"),
       automation,
       grill_name: resolveStoredGrillDisplayName(this.state.grill_id),
+      uncommanded_reply: this.uncommandedReply,
     };
   }
 }

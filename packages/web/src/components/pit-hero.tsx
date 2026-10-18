@@ -27,12 +27,12 @@ function commitSetpoint(temp: number) {
   return setSetpointAction(fd);
 }
 
-function Gauge({ current, target }: { current: number | null; target: number }) {
+function Gauge({ current, target }: { current: number | null; target: number | null }) {
   const min = 100;
   const max = 500;
-  const value = current ?? target;
+  const value = current ?? target ?? min;
   const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
-  const targetPct = Math.max(0, Math.min(1, (target - min) / (max - min)));
+  const targetPct = target === null ? 0 : Math.max(0, Math.min(1, (target - min) / (max - min)));
   const startDeg = 140;
   const sweepDeg = 260;
   const r = 86;
@@ -79,25 +79,29 @@ function Gauge({ current, target }: { current: number | null; target: number }) 
           strokeDasharray={`${progressLen} ${circumference}`}
         />
       </g>
-      <line
-        x1={tickInner.x}
-        y1={tickInner.y}
-        x2={tickOuter.x}
-        y2={tickOuter.y}
-        stroke="#e8eef4"
-        strokeWidth="7"
-        strokeLinecap="round"
-      />
-      <line
-        x1={tickInner.x}
-        y1={tickInner.y}
-        x2={tickOuter.x}
-        y2={tickOuter.y}
-        stroke="#000000"
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-      <circle cx={tick.x} cy={tick.y} r="7" fill="#000000" />
+      {target === null ? null : (
+        <>
+          <line
+            x1={tickInner.x}
+            y1={tickInner.y}
+            x2={tickOuter.x}
+            y2={tickOuter.y}
+            stroke="#e8eef4"
+            strokeWidth="7"
+            strokeLinecap="round"
+          />
+          <line
+            x1={tickInner.x}
+            y1={tickInner.y}
+            x2={tickOuter.x}
+            y2={tickOuter.y}
+            stroke="#000000"
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
+          <circle cx={tick.x} cy={tick.y} r="7" fill="#000000" />
+        </>
+      )}
     </svg>
   );
 }
@@ -111,13 +115,15 @@ function EditableSetpoint({
   locked,
   onApplied,
 }: {
-  current: number;
+  /** null = the bridge is not commanding a setpoint (the grill's panel owns it). */
+  current: number | null;
   locked: boolean;
   onApplied: (temp: number) => void;
 }) {
+  const shown = current === null ? "" : String(current);
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(String(current));
+  const [draft, setDraft] = useState(shown);
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(false);
@@ -126,8 +132,8 @@ function EditableSetpoint({
   draftRef.current = draft;
 
   useEffect(() => {
-    if (!editing) setDraft(String(current));
-  }, [current, editing]);
+    if (!editing) setDraft(shown);
+  }, [shown, editing]);
 
   useEffect(() => {
     if (!editing) return;
@@ -164,10 +170,11 @@ function EditableSetpoint({
 
   function applyDraft() {
     if (!activeRef.current) return;
-    const parsed = Number(draftRef.current);
+    const raw = draftRef.current.trim();
+    const parsed = raw === "" ? Number.NaN : Number(raw);
     if (!Number.isFinite(parsed)) {
       activeRef.current = false;
-      setDraft(String(current));
+      setDraft(shown);
       setOpen(false);
       setEditing(false);
       return;
@@ -177,7 +184,7 @@ function EditableSetpoint({
 
   function cancel() {
     activeRef.current = false;
-    setDraft(String(current));
+    setDraft(shown);
     setOpen(false);
     setEditing(false);
   }
@@ -185,7 +192,7 @@ function EditableSetpoint({
   function startEditing() {
     if (locked) return;
     activeRef.current = true;
-    setDraft(String(current));
+    setDraft(shown);
     setEditing(true);
     setOpen(true);
   }
@@ -211,6 +218,7 @@ function EditableSetpoint({
                 max={SETPOINT_MAX}
                 step={SETPOINT_STEP}
                 value={draft}
+                placeholder="°F"
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -297,9 +305,9 @@ function EditableSetpoint({
             startEditing();
           }}
           className="inline-flex min-h-12 min-w-[5.5rem] cursor-pointer touch-manipulation items-center justify-end rounded-xl px-2 font-mono text-4xl leading-none text-primary tabular-nums select-none [-webkit-tap-highlight-color:transparent] disabled:cursor-default disabled:opacity-60"
-          aria-label="Edit setpoint"
+          aria-label={current === null ? "Set a setpoint (currently set on the grill)" : "Edit setpoint"}
         >
-          {current}°
+          {current === null ? "--" : current}°
         </button>
       )}
     </div>
@@ -310,7 +318,8 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
   const ready = status !== null;
   const online = status?.is_online ?? false;
   const pit = online ? Number(status?.state.temp) : null;
-  const reported = status?.command.setPoint ?? 175;
+  // null: the bridge is not commanding a setpoint this cook; the panel owns it.
+  const reported = status ? status.command.setPoint : null;
   const [pendingSetpoint, setPendingSetpoint] = useState<number | null>(null);
   const target = pendingSetpoint ?? reported;
 
@@ -318,7 +327,7 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
     if (pendingSetpoint !== null && reported === pendingSetpoint) setPendingSetpoint(null);
   }, [pendingSetpoint, reported]);
 
-  const delta = pit !== null && Number.isFinite(pit) ? pit - target : null;
+  const delta = target !== null && pit !== null && Number.isFinite(pit) ? pit - target : null;
   const pitLabel = pit !== null && Number.isFinite(pit) ? Math.round(pit) : "--";
   const locked = !online || Boolean(status?.is_cooldown) || status?.state.power.toUpperCase() !== "ON";
   const showTurnOn = ready && status.state.power.toUpperCase() !== "ON" && !status.is_cooldown;
@@ -346,7 +355,11 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
               <Skeleton className="mt-2 ml-auto h-12 w-20" />
             )}
             <p className="mt-1 h-5 text-sm text-muted-foreground">
-              {delta === null ? "Awaiting grill" : `${delta > 0 ? "+" : ""}${Math.round(delta)}° vs target`}
+              {target === null
+                ? "Set on grill"
+                : delta === null
+                  ? "Awaiting grill"
+                  : `${delta > 0 ? "+" : ""}${Math.round(delta)}° vs target`}
             </p>
             {showTurnOn ? (
               <form action={setPowerAction} className="mt-2 flex min-h-11 justify-end">

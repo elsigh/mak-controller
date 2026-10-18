@@ -15,6 +15,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - MAKGRILL_SECRET=${MAKGRILL_SECRET:-}
       - NTFY_TOPIC=${NTFY_TOPIC:-}
+      - UNCOMMANDED_REPLY=${UNCOMMANDED_REPLY:-hold}
       - BRIDGE_PORT=80
       - WEB_ORIGIN=${WEB_ORIGIN:-http://web:3000}
     depends_on:

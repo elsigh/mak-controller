@@ -18,7 +18,12 @@ export interface Recipe {
 }
 
 export interface GrillCommand {
-  setPoint: number;
+  /**
+   * Commanded pit setpoint (°F), or `null` while the bridge is NOT commanding
+   * one: the user has not set a setpoint for the current cook in the app/API
+   * (or a recipe). The grill keeps whatever was set on its own panel.
+   */
+  setPoint: number | null;
   potStatus: string;
   cookMode: number;
   zoneProbe: number;
@@ -84,6 +89,8 @@ export interface StatusResponse {
   automation: AutomationStatus;
   /** Resolved header title; never blank (falls back to FALLBACK_GRILL_NAME). */
   grill_name: string;
+  /** How the bridge answers polls while `command.setPoint` is null. */
+  uncommanded_reply: UncommandedReplyMode;
 }
 
 /** Settings persisted on the bridge (`settings` SQLite table). */
@@ -239,8 +246,43 @@ export const KNOWN_GRILL_POST_KEYS = [
 
 export const DANGER_TOKENS = ["FIRE", "FLAMEOUT", "FLAME OUT", "TIMEOUT", "TIME OUT"] as const;
 
+/**
+ * Placeholder setpoint for the wire format when one is required but the user
+ * has not chosen one (only an explicit user power-off reply). Never sent as a
+ * real temperature command.
+ */
+export const FALLBACK_SETPOINT = 175;
+
+/**
+ * How the bridge answers a grill POST while it is not commanding a setpoint
+ * (see PROTOCOL.md "Setpoint ownership").
+ *  - `hold`   (default): HTTP 503, empty body. No command at all, the same as
+ *    the server being briefly unreachable, which the grill rides through on
+ *    its own panel setpoint.
+ *  - `omit`:  HTTP 200 with the quoted string minus the `setPoint` key.
+ *    Untested against Pellet Boss firmware.
+ *  - `legacy`: HTTP 200 with `setPoint=175` (pre-2026-10-17 behavior; this
+ *    overwrites a panel setpoint).
+ */
+export type UncommandedReplyMode = "hold" | "omit" | "legacy";
+export const UNCOMMANDED_REPLY_MODES: readonly UncommandedReplyMode[] = ["hold", "omit", "legacy"];
+
+export function parseUncommandedReplyMode(raw: string | null | undefined): UncommandedReplyMode {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return (UNCOMMANDED_REPLY_MODES as readonly string[]).includes(value)
+    ? (value as UncommandedReplyMode)
+    : "hold";
+}
+
+/**
+ * A grill gap at least this long ends the current cook: the next poll starts
+ * a new grill session and the old app setpoint is not resurrected onto it.
+ * Routine grill Wi-Fi drops are 30s to ~3 minutes and stay well under this.
+ */
+export const NEW_COOK_GAP_MS = 30 * 60 * 1000;
+
 export const DEFAULT_COMMAND: GrillCommand = {
-  setPoint: 175,
+  setPoint: null,
   potStatus: "",
   cookMode: 1,
   zoneProbe: 1,
@@ -313,7 +355,7 @@ export const DEFAULT_RECIPES: Array<{ name: string; stages: RecipeStage[] }> = [
 
 export function clampSetpoint(temp: number): number {
   if (!Number.isFinite(temp)) {
-    return DEFAULT_COMMAND.setPoint;
+    return FALLBACK_SETPOINT;
   }
   const stepped = Math.round(temp / SETPOINT_STEP) * SETPOINT_STEP;
   return Math.min(SETPOINT_MAX, Math.max(SETPOINT_MIN, stepped));
@@ -336,8 +378,46 @@ export function parseNumber(raw: unknown): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/** Full quoted reply. A null setpoint is written as FALLBACK_SETPOINT. */
 export function encodeGrillResponse(command: GrillCommand): string {
-  return `"setPoint=${command.setPoint}&potStatus=${command.potStatus}&cookMode=${command.cookMode}&zoneProbe=${command.zoneProbe}&power=${command.power}"`;
+  const setPoint = command.setPoint ?? FALLBACK_SETPOINT;
+  return `"setPoint=${setPoint}&potStatus=${command.potStatus}&cookMode=${command.cookMode}&zoneProbe=${command.zoneProbe}&power=${command.power}"`;
+}
+
+/** Quoted reply without the `setPoint` key (UNCOMMANDED_REPLY=omit). */
+export function encodeGrillResponseWithoutSetpoint(command: GrillCommand): string {
+  return `"potStatus=${command.potStatus}&cookMode=${command.cookMode}&zoneProbe=${command.zoneProbe}&power=${command.power}"`;
+}
+
+/** Reported Power values that mean the grill is shutting down or off. */
+export function isOffOrCooldownPower(reported: string): boolean {
+  const upper = String(reported ?? "").trim().toUpperCase();
+  return upper === "" || upper === "OFF" || upper.includes("COOL") || upper === "CD";
+}
+
+/**
+ * Does this poll begin a new cook relative to the previous one? Used only to
+ * drop an app setpoint (or recipe) that belongs to an earlier cook; a new cook
+ * means "stop commanding", never "command something else".
+ *  - the grill reports START after reporting anything else (fresh ignition),
+ *  - the previous poll was OFF / cooldown and the grill is now running again,
+ *  - or the grill was silent for NEW_COOK_GAP_MS or longer.
+ * Routine Wi-Fi drops (ON → gap of minutes → ON) are not a new cook.
+ */
+export function detectNewCook(input: {
+  previousPower: string | null;
+  previousSeenEpoch: number;
+  power: string;
+  now: number;
+}): string | null {
+  if (input.previousSeenEpoch <= 0 || input.previousPower === null) return "first poll since bridge start";
+  const prev = input.previousPower.trim().toUpperCase();
+  const cur = input.power.trim().toUpperCase();
+  const gap = input.now - input.previousSeenEpoch;
+  if (gap >= NEW_COOK_GAP_MS) return `grill silent for ${Math.round(gap / 60_000)} min`;
+  if (cur === "START" && prev !== "START") return `Power ${prev || "(empty)"} → START`;
+  if (isOffOrCooldownPower(prev) && !isOffOrCooldownPower(cur)) return `Power ${prev || "(empty)"} → ${cur}`;
+  return null;
 }
 
 export function isCooldownPower(reported: string): boolean {

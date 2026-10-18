@@ -21,6 +21,11 @@ import {
   resolveGrillDisplayName,
   DEFAULT_COMMAND,
   FALLBACK_GRILL_NAME,
+  FALLBACK_SETPOINT,
+  NEW_COOK_GAP_MS,
+  detectNewCook,
+  encodeGrillResponseWithoutSetpoint,
+  parseUncommandedReplyMode,
   HISTORY_TIMEZONE,
   SILENCE_THRESHOLD_MS,
   UNKNOWN_GRILL_ID,
@@ -61,7 +66,7 @@ describe("setpoint", () => {
     assert.equal(clampSetpoint(223), 225);
     assert.equal(clampSetpoint(149), 150);
     assert.equal(clampSetpoint(501), 500);
-    assert.equal(clampSetpoint(Number.NaN), DEFAULT_COMMAND.setPoint);
+    assert.equal(clampSetpoint(Number.NaN), FALLBACK_SETPOINT);
   });
 
   it("validates integer step-5 values", () => {
@@ -181,6 +186,47 @@ describe("day history helpers", () => {
     assert.deepEqual(
       downsampleByTime(rows, 20).map((row) => row.timestamp),
       ["2026-09-20 10:00:00", "2026-09-20 10:00:20", "2026-09-20 10:00:24"],
+    );
+  });
+});
+
+describe("setpoint ownership", () => {
+  it("does not command a setpoint by default", () => {
+    assert.equal(DEFAULT_COMMAND.setPoint, null);
+    assert.equal(
+      encodeGrillResponseWithoutSetpoint({ ...DEFAULT_COMMAND, power: 1 }),
+      '"potStatus=&cookMode=1&zoneProbe=1&power=1"',
+    );
+    assert.equal(
+      encodeGrillResponse({ ...DEFAULT_COMMAND, power: 0 }),
+      `"setPoint=${FALLBACK_SETPOINT}&potStatus=&cookMode=1&zoneProbe=1&power=0"`,
+    );
+  });
+
+  it("parses UNCOMMANDED_REPLY with hold as the default", () => {
+    assert.equal(parseUncommandedReplyMode(undefined), "hold");
+    assert.equal(parseUncommandedReplyMode(""), "hold");
+    assert.equal(parseUncommandedReplyMode("bogus"), "hold");
+    assert.equal(parseUncommandedReplyMode(" OMIT "), "omit");
+    assert.equal(parseUncommandedReplyMode("legacy"), "legacy");
+  });
+
+  it("detects a new cook but not a routine Wi-Fi drop", () => {
+    const base = { previousSeenEpoch: 1_000_000, now: 1_000_000 + 3 * 60 * 1000 };
+    assert.equal(detectNewCook({ ...base, previousPower: "ON", power: "ON" }), null);
+    assert.equal(detectNewCook({ ...base, previousPower: "START", power: "ON" }), null);
+    assert.equal(detectNewCook({ ...base, previousPower: "START", power: "START" }), null);
+    assert.equal(detectNewCook({ ...base, previousPower: "COOLDOWN", power: "OFF" }), null);
+    assert.ok(detectNewCook({ ...base, previousPower: "ON", power: "START" }));
+    assert.ok(detectNewCook({ ...base, previousPower: "COOLDOWN", power: "ON" }));
+    assert.ok(detectNewCook({ ...base, previousPower: "OFF", power: "START" }));
+    assert.ok(detectNewCook({ previousPower: null, previousSeenEpoch: 0, power: "ON", now: 5 }));
+    assert.ok(
+      detectNewCook({ previousPower: "ON", power: "ON", previousSeenEpoch: 1, now: 1 + NEW_COOK_GAP_MS }),
+    );
+    assert.equal(
+      detectNewCook({ previousPower: "ON", power: "ON", previousSeenEpoch: 1, now: NEW_COOK_GAP_MS }),
+      null,
     );
   });
 });

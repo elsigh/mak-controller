@@ -148,7 +148,13 @@ export function AboutStudio({
             <MetaRow label="Last alert" value={describeLastAlert(status?.last_alert)} pending={pending} mono={false} />
             <MetaRow
               label="Setpoint"
-              value={command ? `${command.setPoint}°F` : "—"}
+              value={
+                command
+                  ? command.setPoint === null
+                    ? `Set on grill (not commanded; ${status?.uncommanded_reply ?? "hold"})`
+                    : `${command.setPoint}°F`
+                  : "—"
+              }
               pending={pending}
             />
             <MetaRow

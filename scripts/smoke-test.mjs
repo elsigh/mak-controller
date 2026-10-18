@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Smoke test: simulate a Pellet Boss POST, then a UI setpoint change,
- * then confirm the next GrillService response carries the new command.
+ * Smoke test: simulate a Pellet Boss POST (no command before an app setpoint),
+ * then a UI setpoint change, then confirm the next GrillService response
+ * carries the new command.
  */
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -52,10 +53,10 @@ async function runAgainst(base) {
     Probe3: "",
     GrillFlags: "0",
   });
-  assert(first.status === 200, `Grill POST status ${first.status}`);
-  assert(first.type?.includes("text/html"), `Expected text/html, got ${first.type}`);
-  assert(first.text.startsWith('"') && first.text.endsWith('"'), `Response must be quoted: ${first.text}`);
-  assert(first.text.includes("setPoint="), `Missing setPoint: ${first.text}`);
+  // No app setpoint yet this cook: no command at all (UNCOMMANDED_REPLY=hold),
+  // so turning on Web Ctrl never overwrites the panel setpoint.
+  assert(first.status === 503, `First grill POST should get no command (503), got ${first.status}: ${first.text}`);
+  assert(first.text === "", `No-command reply must be empty: ${first.text}`);
 
   const statusRes = await fetch(`${base}/internal/status`);
   assert(statusRes.ok, `status ${statusRes.status}`);
@@ -82,6 +83,8 @@ async function runAgainst(base) {
     Probe3: "",
     GrillFlags: "ATSET",
   });
+  assert(second.status === 200, `Grill POST status ${second.status}`);
+  assert(second.type?.includes("text/html"), `Expected text/html, got ${second.type}`);
   assert(
     second.text === '"setPoint=225&potStatus=&cookMode=1&zoneProbe=1&power=1"',
     `Next grill response should carry UI setpoint. Got: ${second.text}`,
@@ -125,6 +128,7 @@ async function main() {
       MAKGRILL_SECRET: "",
       WEB_ORIGIN: "",
       LOG_LEVEL: "WARN",
+      UNCOMMANDED_REPLY: "hold",
     },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
