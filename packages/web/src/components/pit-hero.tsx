@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import {
   SETPOINT_MAX,
@@ -114,11 +114,14 @@ function EditableSetpoint({
   current,
   locked,
   onApplied,
+  openRef,
 }: {
   /** null = the bridge is not commanding a setpoint (the grill's panel owns it). */
   current: number | null;
   locked: boolean;
   onApplied: (temp: number) => void;
+  /** Lets the parent (the "Set temp" button) open the picker. */
+  openRef?: React.Ref<{ open: () => void }>;
 }) {
   const shown = current === null ? "" : String(current);
   const [editing, setEditing] = useState(false);
@@ -196,6 +199,8 @@ function EditableSetpoint({
     setEditing(true);
     setOpen(true);
   }
+
+  useImperativeHandle(openRef, () => ({ open: startEditing }));
 
   function togglePresets() {
     const now = Date.now();
@@ -329,8 +334,14 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
 
   const delta = target !== null && pit !== null && Number.isFinite(pit) ? pit - target : null;
   const pitLabel = pit !== null && Number.isFinite(pit) ? Math.round(pit) : "--";
-  const locked = !online || Boolean(status?.is_cooldown) || status?.state.power.toUpperCase() !== "ON";
-  const showTurnOn = ready && status.state.power.toUpperCase() !== "ON" && !status.is_cooldown;
+  const power = status?.state.power.toUpperCase() ?? "";
+  // START is the grill's ignition phase; it's running, so the setpoint is editable.
+  const running = power === "ON" || power === "START";
+  const locked = !online || Boolean(status?.is_cooldown) || !running;
+  // Only offer Turn on when the grill is online and actually off; offline it can't work.
+  const showTurnOn = ready && online && !running && !status.is_cooldown;
+  const showSetTemp = ready && target === null && !locked;
+  const setpointRef = useRef<{ open: () => void }>(null);
 
   return (
     <Panel className="hero-ring min-h-[22.5rem]">
@@ -350,7 +361,12 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
           <div className="text-right">
             <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Setpoint</p>
             {ready ? (
-              <EditableSetpoint current={target} locked={locked} onApplied={setPendingSetpoint} />
+              <EditableSetpoint
+                current={target}
+                locked={locked}
+                onApplied={setPendingSetpoint}
+                openRef={setpointRef}
+              />
             ) : (
               <Skeleton className="mt-2 ml-auto h-12 w-20" />
             )}
@@ -361,14 +377,24 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
                   ? "Awaiting grill"
                   : `${delta > 0 ? "+" : ""}${Math.round(delta)}° vs target`}
             </p>
-            {showTurnOn ? (
-              <form action={setPowerAction} className="mt-2 flex min-h-11 justify-end">
-                <input type="hidden" name="state" value={1} />
-                <Button type="submit" disabled={!online} className={touchBtnClass}>
-                  Turn on
+            <div className="mt-2 flex min-h-11 justify-end">
+              {showSetTemp ? (
+                <Button
+                  type="button"
+                  className={touchBtnClass}
+                  onClick={() => setpointRef.current?.open()}
+                >
+                  Set temp
                 </Button>
-              </form>
-            ) : null}
+              ) : showTurnOn ? (
+                <form action={setPowerAction} className="flex justify-end">
+                  <input type="hidden" name="state" value={1} />
+                  <Button type="submit" className={touchBtnClass}>
+                    Turn on
+                  </Button>
+                </form>
+              ) : null}
+            </div>
           </div>
         </div>
       </CardHeader>
