@@ -483,6 +483,7 @@ export class GrillRuntime {
   /** The user's app/API setpoint: from here on the bridge commands it every poll. */
   setSetpoint(temp: number, now = Date.now()): GrillCommand & { setPoint: number } {
     const setPoint = clampSetpoint(temp);
+    log("INFO", `Setpoint command: requested ${temp}, commanding ${setPoint}.`);
     this.command.setPoint = setPoint;
     this.setpointSetAt = now;
     return { ...this.command, setPoint };

@@ -337,7 +337,10 @@ export function PitHero({ status }: { status: StatusResponse | null }) {
   const power = status?.state.power.toUpperCase() ?? "";
   // START is the grill's ignition phase; it's running, so the setpoint is editable.
   const running = power === "ON" || power === "START";
-  const locked = !online || Boolean(status?.is_cooldown) || !running;
+  // Not gated on is_online: the grill's Wi-Fi blips for ~20s at a time, and the bridge
+  // buffers the setpoint and replies with it on the next poll. state.power is the last
+  // reported value, so this stays enabled through brief offline periods.
+  const locked = Boolean(status?.is_cooldown) || !running;
   // Only offer Turn on when the grill is online and actually off; offline it can't work.
   const showTurnOn = ready && online && !running && !status.is_cooldown;
   const showSetTemp = ready && target === null && !locked;
